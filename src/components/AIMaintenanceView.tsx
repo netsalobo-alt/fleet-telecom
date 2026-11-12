@@ -343,27 +343,9 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
   const [selectedProvider, setSelectedProvider] = useState<'openai' | 'gemini'>(
     settings.openai.preferredProvider || (settings.openai.apiKey ? 'openai' : 'gemini')
   );
-  const [openaiKeyInput, setOpenaiKeyInput] = useState(() => storage.getSettings().openai?.apiKey || '');
-  const [showKeyModal, setShowKeyModal] = useState(false);
-  const [keySavedMsg, setKeySavedMsg] = useState(false);
+  const openaiKeyInput = storage.getSettings().openai?.apiKey || '';
   const [providerUsed, setProviderUsed] = useState<string>('');
   const [modelUsed, setModelUsed] = useState<string>('');
-
-  const handleSaveInlineKey = (keyVal: string) => {
-    const cur = storage.getSettings();
-    const updated = {
-      ...cur,
-      openai: {
-        ...cur.openai,
-        apiKey: keyVal.trim(),
-      },
-    };
-    storage.saveSettings(updated);
-    setOpenaiKeyInput(keyVal.trim());
-    setKeySavedMsg(true);
-    setTimeout(() => setKeySavedMsg(false), 2500);
-    setAiError(null);
-  };
 
   // Filters for historical table
   const [filterPlaca, setFilterPlaca] = useState('ALL');
@@ -478,8 +460,7 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
 
     // If user explicitly chose OpenAI and hasn't entered key yet, prompt them:
     if (selectedProvider === 'openai' && !activeOpenAiKey) {
-      setShowKeyModal(true);
-      setAiError('Para usar OpenAI (GPT-4o), informe sua API Key abaixo ou alterne para o Gemini no seletor acima.');
+      setAiError('O token da OpenAI não está configurado. Peça a um gestor para cadastrá-lo em Configurações, ou use o Gemini.');
       return;
     }
 
@@ -846,7 +827,6 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
               type="button"
               onClick={() => {
                 setSelectedProvider('openai');
-                if (!openaiKeyInput) setShowKeyModal(true);
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                 selectedProvider === 'openai'
@@ -865,7 +845,6 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
               type="button"
               onClick={() => {
                 setSelectedProvider('gemini');
-                setShowKeyModal(false);
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                 selectedProvider === 'gemini'
@@ -878,16 +857,6 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
             </button>
           </div>
 
-          {selectedProvider === 'openai' && (
-            <button
-              type="button"
-              onClick={() => setShowKeyModal(!showKeyModal)}
-              className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
-            >
-              <Key className="w-3 h-3" />
-              <span>{openaiKeyInput ? 'Editar Token OpenAI' : 'Inserir Token OpenAI'}</span>
-            </button>
-          )}
 
           {/* Direct Manual Entry Button without AI */}
           <button
@@ -902,48 +871,12 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
         </div>
       </div>
 
-      {/* Inline OpenAI Token Card if requested */}
-      {selectedProvider === 'openai' && (!openaiKeyInput || showKeyModal) && (
-        <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-4 text-xs space-y-2 animate-in fade-in">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-emerald-950 flex items-center gap-1.5">
-              <Key className="w-4 h-4 text-emerald-700" />
-              Configurar Token da OpenAI (API Key):
-            </span>
-            {openaiKeyInput && (
-              <button
-                type="button"
-                onClick={() => setShowKeyModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          <p className="text-[11px] text-emerald-800">
-            Cole sua chave <code>sk-...</code> da OpenAI para processamento com GPT-4o Vision diretamente com seus créditos.
-          </p>
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              value={openaiKeyInput}
-              onChange={e => setOpenaiKeyInput(e.target.value)}
-              placeholder="sk-proj-..."
-              className="flex-1 bg-white border border-emerald-300 rounded-lg p-2 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-            <button
-              type="button"
-              onClick={() => handleSaveInlineKey(openaiKeyInput)}
-              className="bg-emerald-600 hover:bg-emerald-600 text-white font-bold px-4 py-2 rounded-lg text-xs shrink-0"
-            >
-              Salvar Token
-            </button>
-          </div>
-          {keySavedMsg && (
-            <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
-              <Check className="w-3.5 h-3.5" /> Token salvo com sucesso!
-            </span>
-          )}
+      {selectedProvider === 'openai' && !openaiKeyInput && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 text-xs text-amber-900 flex items-center gap-2">
+          <Key className="w-4 h-4 shrink-0" />
+          <span>
+            O token da OpenAI não está configurado. Um gestor pode cadastrá-lo em <strong>Configurações</strong>, ou use o Gemini.
+          </span>
         </div>
       )}
 
@@ -1098,7 +1031,6 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
                   onClick={() => {
                     setSelectedProvider('gemini');
                     setAiError(null);
-                    setShowKeyModal(false);
                   }}
                   className="bg-brand-navy hover:bg-navy-deep text-white font-semibold px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors"
                 >
