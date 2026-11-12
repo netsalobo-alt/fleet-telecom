@@ -1,0 +1,62 @@
+# Stack do Portainer (Docker Swarm) – Fleet Telecom em https://fleet.nortetelecom.net.br
+# Passo a passo em docs/PORTAINER.md
+#
+# Usa o Traefik do servidor (o mesmo do m2auto.com.br e do analytics.m2auto.com.br):
+# rede Mosqueironet, entrypoint websecure, certresolver letsencryptresolver. Não publica portas.
+#
+# Variáveis (Portainer → Stacks → "Environment variables"):
+#   FLEET_ADMIN_PASSWORD (obrigatória) senha do administrador criado na PRIMEIRA execução (mín. 8)
+#   FLEET_ADMIN_LOGIN    (opcional)    login desse administrador; padrão "admin"
+#   FLEET_ADMIN_NAME     (opcional)    nome exibido; padrão "Administrador"
+#   GEMINI_API_KEY       (opcional)    chave do Gemini para a leitura de notas e diagnóstico com IA
+#   FIPE_SUBSCRIPTION_TOKEN (opcional) token da API FIPE (parallelum) para buscar a FIPE pela placa
+#   WAHA_ALLOWED_HOSTS   (opcional)    restringe o envio de WhatsApp a este host (ex.: waha.nortetelecom.net.br)
+#
+# O administrador só é criado com o banco vazio. Depois, usuários e senhas são geridos no próprio sistema.
+services:
+  fleet:
+    image: ghcr.io/netsalobo-alt/fleet-telecom:latest
+    environment:
+      TZ: America/Belem
+      NODE_ENV: production
+      FLEET_ADMIN_PASSWORD: ${FLEET_ADMIN_PASSWORD:?Defina FLEET_ADMIN_PASSWORD nas variaveis da stack}
+      FLEET_ADMIN_LOGIN: ${FLEET_ADMIN_LOGIN:-admin}
+      FLEET_ADMIN_NAME: ${FLEET_ADMIN_NAME:-Administrador}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      FIPE_SUBSCRIPTION_TOKEN: ${FIPE_SUBSCRIPTION_TOKEN:-}
+      WAHA_ALLOWED_HOSTS: ${WAHA_ALLOWED_HOSTS:-}
+      TRACKING_ALLOWED_HOSTS: appselsyn.com.br
+    volumes:
+      # banco SQLite (fleet.db). NÃO apague este volume: é onde ficam todos os dados.
+      - fleet_data:/app/data
+    networks:
+      - Mosqueironet
+    deploy:
+      # SQLite: um único container abre o arquivo do banco
+      replicas: 1
+      update_config:
+        order: stop-first
+      restart_policy:
+        condition: any
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.fleet.rule=Host(`fleet.nortetelecom.net.br`)
+        - traefik.http.routers.fleet.entrypoints=websecure
+        - traefik.http.routers.fleet.tls=true
+        - traefik.http.routers.fleet.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.fleet.service=fleet
+        - traefik.http.services.fleet.loadbalancer.server.port=3000
+        - traefik.swarm.network=Mosqueironet
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  Mosqueironet:
+    external: true
+
+volumes:
+  fleet_data:
+    name: fleet_data

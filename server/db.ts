@@ -242,6 +242,9 @@ export function seedIfEmpty() {
 
   const login = (process.env.FLEET_ADMIN_LOGIN || 'admin').trim().toLowerCase();
   let senha = process.env.FLEET_ADMIN_PASSWORD || '';
+  if (senha && senha.length < 8) {
+    throw new Error('FLEET_ADMIN_PASSWORD precisa ter pelo menos 8 caracteres.');
+  }
   const gerada = !senha;
   if (gerada) senha = randomBytes(9).toString('base64url');
   const admin: SystemUser = {

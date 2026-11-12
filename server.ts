@@ -1326,9 +1326,8 @@ app.post('/api/selsyn/test-connection', async (req, res) => {
 // ==========================================
 // OFFICIAL FIPE API (PARALLELUM V2) INTEGRATION
 // ==========================================
-const DEFAULT_FIPE_TOKEN =
-  process.env.FIPE_SUBSCRIPTION_TOKEN ||
-  '';
+// Token da API FIPE (parallelum): só por variável de ambiente, nunca no código
+const DEFAULT_FIPE_TOKEN = process.env.FIPE_SUBSCRIPTION_TOKEN || '';
 
 function parseFipePriceToNumber(priceStr?: string): number {
   if (!priceStr) return 0;
@@ -1371,7 +1370,7 @@ async function fetchFipeByPlate(placa: string, customToken?: string): Promise<Fi
       method: 'GET',
       headers: {
         'Accept': 'application/json',
-        'X-Subscription-Token': token,
+        ...(token ? { 'X-Subscription-Token': token } : {}),
       },
       signal: AbortSignal.timeout(9000),
     });
