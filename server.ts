@@ -2480,7 +2480,12 @@ async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      // HMR numa porta própria (PORT + 20000 por padrão) para permitir
+      // rodar mais de uma cópia do app ao mesmo tempo.
+      server: {
+        middlewareMode: true,
+        hmr: { port: Number(process.env.HMR_PORT) || PORT + 20000 },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
