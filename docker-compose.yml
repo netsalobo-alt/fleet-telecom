@@ -5,7 +5,7 @@
 # rede Mosqueironet, entrypoint websecure, certresolver letsencryptresolver. Não publica portas.
 #
 # Variáveis (Portainer → Stacks → "Environment variables"):
-#   FLEET_ADMIN_PASSWORD (obrigatória) senha do administrador criado na PRIMEIRA execução (mín. 8)
+#   FLEET_ADMIN_PASSWORD (obrigatória) senha do administrador criado na PRIMEIRA execução (recomendado 8+ caracteres)
 #   FLEET_ADMIN_LOGIN    (opcional)    login desse administrador; padrão "admin"
 #   FLEET_ADMIN_NAME     (opcional)    nome exibido; padrão "Administrador"
 #   GEMINI_API_KEY       (opcional)    chave do Gemini para a leitura de notas e diagnóstico com IA

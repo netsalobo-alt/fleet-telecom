@@ -38,7 +38,16 @@ const DATA_DIR = path.resolve(process.env.DATA_DIR || './data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 export const DB_FILE = path.join(DATA_DIR, 'fleet.db');
 
-const db = new DatabaseSync(DB_FILE);
+let db: DatabaseSync;
+try {
+  db = new DatabaseSync(DB_FILE);
+} catch (err) {
+  console.error(
+    `[DB] Não foi possível abrir ${DB_FILE}: ${(err as Error).message}. ` +
+      `Verifique se a pasta ${DATA_DIR} (volume) existe e permite escrita pelo usuário do container.`,
+  );
+  throw err;
+}
 db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA busy_timeout = 5000;
@@ -243,7 +252,8 @@ export function seedIfEmpty() {
   const login = (process.env.FLEET_ADMIN_LOGIN || 'admin').trim().toLowerCase();
   let senha = process.env.FLEET_ADMIN_PASSWORD || '';
   if (senha && senha.length < 8) {
-    throw new Error('FLEET_ADMIN_PASSWORD precisa ter pelo menos 8 caracteres.');
+    // Não derruba o app (no Swarm isso vira "non-zero exit" sem explicação): usa a senha e avisa.
+    console.warn('[DB] Aviso: FLEET_ADMIN_PASSWORD tem menos de 8 caracteres. Troque a senha do administrador depois de entrar.');
   }
   const gerada = !senha;
   if (gerada) senha = randomBytes(9).toString('base64url');
