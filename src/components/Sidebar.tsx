@@ -20,6 +20,7 @@ import {
   Key,
   IdCard,
   LogOut,
+  ScanSearch,
 } from 'lucide-react';
 import { TelemetryAlert, Vehicle, SystemUser, RevisionPlan, USER_ROLE_SHORT } from '../types';
 import { canAccessTab } from '../services/permissions';
@@ -31,6 +32,7 @@ export type TabType =
   | 'suppliers'
   | 'maintenance'
   | 'reports'
+  | 'history'
   | 'revisions'
   | 'calendar'
   | 'detran'
@@ -124,6 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'maintenance', label: 'Lançar serviços', icon: Wrench, section: 'Operação' },
     { id: 'tracking', label: 'Rastreamento', icon: MapPin, section: 'Operação' },
     { id: 'detran', label: 'IPVA e licenciamento', icon: FileText, section: 'Fiscal e relatórios' },
+    { id: 'history', label: 'Raio-X da frota', icon: ScanSearch, section: 'Fiscal e relatórios' },
     { id: 'reports', label: 'Gastos', icon: BarChart3, section: 'Fiscal e relatórios' },
     {
       id: 'alerts',

@@ -297,3 +297,48 @@
 @media (prefers-reduced-motion: reduce) {
   .fleet-pin.is-moving::after { animation: none; }
 }
+
+/* ---------- Impressão / PDF (Raio-X e relatórios) ---------- */
+.print-only {
+  display: none;
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  aside,
+  header.md\:hidden,
+  footer,
+  .no-print,
+  [role='status'][aria-live] {
+    display: none !important;
+  }
+  .print-full {
+    margin-left: 0 !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-area section,
+  .print-area header {
+    box-shadow: none !important;
+  }
+  .break-inside-avoid,
+  .print-area li {
+    break-inside: avoid;
+  }
+  /* Barras saem na impressão mesmo com "imprimir fundos" desligado */
+  .print-bar {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

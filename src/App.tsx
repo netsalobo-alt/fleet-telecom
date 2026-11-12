@@ -13,6 +13,7 @@ import { ConfigView } from './components/ConfigView';
 import { SuppliersView } from './components/SuppliersView';
 import { FleetCalendarView } from './components/FleetCalendarView';
 import { DriversView } from './components/DriversView';
+import { HistoryView } from './components/HistoryView';
 import { sync } from './services/sync';
 import { LocalImportBanner } from './components/LocalImportBanner';
 import { canAccessTab } from './services/permissions';
@@ -27,6 +28,8 @@ interface AppProps {
 
 export default function App({ onLogout }: AppProps) {
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
+  // Veículo a abrir no Raio-X quando se chega pela Frota
+  const [historyVehicleId, setHistoryVehicleId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [showGlobalUserModal, setShowGlobalUserModal] = useState<boolean>(false);
@@ -317,7 +320,10 @@ export default function App({ onLogout }: AppProps) {
       {/* Modern Collapsible & Mobile Responsive Left Sidebar */}
       <Sidebar
         currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
+        setCurrentTab={(tab) => {
+          if (tab === 'history') setHistoryVehicleId(null);
+          setCurrentTab(tab);
+        }}
         vehicles={vehicles}
         alerts={alerts}
         revisions={revisions}
@@ -341,7 +347,7 @@ export default function App({ onLogout }: AppProps) {
 
       {/* Main Content Column with dynamic left margin for Sidebar */}
       <div
-        className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${
+        className={`print-full flex-1 flex flex-col min-w-0 transition-all duration-300 ${
           isSidebarCollapsed ? 'md:ml-20' : 'md:ml-64'
         }`}
       >
@@ -438,6 +444,10 @@ export default function App({ onLogout }: AppProps) {
             onNavigateToTracking={(veiculoId) => {
               setCurrentTab('tracking');
             }}
+            onOpenHistory={canAccessTab(currentUser, 'history') ? (veiculoId) => {
+              setHistoryVehicleId(veiculoId);
+              setCurrentTab('history');
+            } : undefined}
             onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
@@ -483,6 +493,17 @@ export default function App({ onLogout }: AppProps) {
             vehicles={vehicles}
             services={services}
             suppliers={suppliers}
+          />
+        )}
+
+        {tabAllowed && currentTab === 'history' && (
+          <HistoryView
+            key={historyVehicleId || 'frota'}
+            vehicles={vehicles}
+            services={services}
+            revisions={revisions}
+            licensingList={licensingList}
+            initialVehicleId={historyVehicleId}
           />
         )}
 
@@ -544,7 +565,7 @@ export default function App({ onLogout }: AppProps) {
         )}
       </main>
 
-      <footer className="border-t border-line mt-12 py-6 text-[13px] text-ink-muted">
+      <footer className="no-print border-t border-line mt-12 py-6 text-[13px] text-ink-muted">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 flex flex-col sm:flex-row items-center justify-between gap-3">
           <span>
             <span className="font-semibold text-navy-deep">Fleet Telecom</span> · gestão de frota por Norte Telecom

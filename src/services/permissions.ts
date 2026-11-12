@@ -7,6 +7,7 @@ import { SystemUser, UserPermissions, UserRole } from '../types';
 const MODULE_ALIAS: Record<string, string> = {
   calendar: 'revisions',
   drivers: 'vehicles',
+  history: 'reports',
 };
 
 /** O usuário pode abrir esta tela? Gestor vê tudo; os demais seguem os módulos do perfil. */

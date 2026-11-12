@@ -28,6 +28,7 @@ import {
   History,
   Calendar,
   DollarSign,
+  ScanSearch,
 } from 'lucide-react';
 import { Vehicle, Driver, FuelType, ServiceLog } from '../types';
 import { LicensePlateBadge } from './LicensePlateBadge';
@@ -42,6 +43,8 @@ interface VehiclesViewProps {
   onVehiclesUpdated: () => void;
   onNavigateToAI: (placa?: string) => void;
   onNavigateToTracking: (veiculoId?: string) => void;
+  /** Abre o Raio-X (histórico completo) do veículo. */
+  onOpenHistory?: (veiculoId: string) => void;
   onSendWhatsAppAlert: (message: string, placa: string) => Promise<boolean>;
   onServiceAdded?: (service: ServiceLog) => void;
 }
@@ -53,6 +56,7 @@ export const VehiclesView: React.FC<VehiclesViewProps> = ({
   onVehiclesUpdated,
   onNavigateToAI,
   onNavigateToTracking,
+  onOpenHistory,
   onSendWhatsAppAlert,
   onServiceAdded,
 }) => {
@@ -904,6 +908,18 @@ export const VehiclesView: React.FC<VehiclesViewProps> = ({
                   >
                     <Sparkles className="w-3.5 h-3.5 text-sky-600" />
                   </button>
+
+                  {/* Raio-X do veículo */}
+                  {onOpenHistory && (
+                    <button
+                      onClick={() => onOpenHistory(v.id)}
+                      title="Raio-X: histórico completo do veículo"
+                      aria-label={`Raio-X de ${v.placa}`}
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+                    >
+                      <ScanSearch className="w-3.5 h-3.5" />
+                    </button>
+                  )}
 
                   {/* View on Map */}
                   <button
