@@ -736,6 +736,44 @@ function toWahaChatId(raw: string): string | null {
   return `${digits}@c.us`;
 }
 
+/**
+ * Alternativas do mesmo número brasileiro: com e sem o 9 extra do celular.
+ * Muitos números (principalmente fora de SP/RJ, como DDD 91) estão no WhatsApp sem o 9.
+ */
+function brPhoneVariants(digits: string): string[] {
+  if (digits.startsWith('55') && digits.length === 13 && digits[4] === '9') return [digits, digits.slice(0, 4) + digits.slice(5)];
+  if (digits.startsWith('55') && digits.length === 12 && /[6-9]/.test(digits[4])) return [digits, `${digits.slice(0, 4)}9${digits.slice(4)}`];
+  return [digits];
+}
+
+/**
+ * Pergunta à WAHA qual é o chatId real do número (/api/contacts/check-exists).
+ * Devolve o chatId, null se o número não tem WhatsApp, ou o palpite quando a WAHA
+ * não responde a essa rota (versões antigas).
+ */
+async function resolveWahaChatId(baseUrl: string, apiKey: string, session: string, chatId: string): Promise<string | null> {
+  if (!chatId.endsWith('@c.us')) return chatId; // grupos e IDs completos vão como estão
+  const digits = chatId.replace('@c.us', '');
+  let consultou = false;
+  for (const phone of brPhoneVariants(digits)) {
+    try {
+      const { response, data } = await wahaFetch(
+        baseUrl,
+        apiKey,
+        `/api/contacts/check-exists?phone=${phone}&session=${encodeURIComponent(session)}`,
+        { timeoutMs: 10000 },
+      );
+      if (!response.ok || !data || typeof data !== 'object' || !('numberExists' in data)) break;
+      consultou = true;
+      if (data.numberExists) return typeof data.chatId === 'string' && data.chatId ? data.chatId : `${phone}@c.us`;
+    } catch (err) {
+      if (err instanceof UnsafeUrlError) throw err;
+      break;
+    }
+  }
+  return consultou ? null : chatId;
+}
+
 function parseWahaDestinos(raw: unknown): string[] {
   const list = Array.isArray(raw) ? raw : String(raw || '').split(/[\n,;]+/);
   return list.map((d) => String(d).trim()).filter(Boolean);
@@ -801,15 +839,24 @@ app.post('/api/waha/send-text', async (req, res) => {
         continue;
       }
       try {
+        const realChatId = await resolveWahaChatId(baseUrl, apiKey, sessionName, chatId);
+        if (!realChatId) {
+          results.push({ destino, chatId, ok: false, error: 'Este número não tem WhatsApp (testado com e sem o 9).' });
+          continue;
+        }
         const { response, data } = await wahaFetch(baseUrl, apiKey, '/api/sendText', {
           method: 'POST',
-          json: { session: sessionName, chatId, text: String(message) },
+          json: { session: sessionName, chatId: realChatId, text: String(message) },
         });
         if (!response.ok) {
-          results.push({ destino, chatId, ok: false, error: wahaErrorMessage(response.status, data) });
+          const bruto = wahaErrorMessage(response.status, data);
+          const error = /no LID found|not.*exist|not.*registered/i.test(bruto)
+            ? 'O WhatsApp não encontrou este número. Confira o DDD e se o número tem WhatsApp.'
+            : bruto;
+          results.push({ destino, chatId: realChatId, ok: false, error });
         } else {
           const id = data?.id;
-          results.push({ destino, chatId, ok: true, messageId: typeof id === 'string' ? id : id?._serialized });
+          results.push({ destino, chatId: realChatId, ok: true, messageId: typeof id === 'string' ? id : id?._serialized });
         }
       } catch (err: any) {
         if (err instanceof UnsafeUrlError) throw err;
