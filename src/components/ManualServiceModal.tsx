@@ -47,7 +47,7 @@ interface ManualServiceModalProps {
   initialPlaca?: string;
   currentUser?: SystemUser;
   onServiceAdded: (service: ServiceLog) => void;
-  onSendChatwootAlert?: (message: string, placa: string) => Promise<boolean>;
+  onSendWhatsAppAlert?: (message: string, placa: string) => Promise<boolean>;
 }
 
 const MAINTENANCE_TYPES: { id: MaintenanceType; label: string; icon: string; defaultIntervalKm: number; defaultMonths: number; defaultItems: string[] }[] = [
@@ -70,7 +70,7 @@ export const ManualServiceModal: React.FC<ManualServiceModalProps> = ({
   initialPlaca,
   currentUser,
   onServiceAdded,
-  onSendChatwootAlert,
+  onSendWhatsAppAlert,
 }) => {
   if (!isOpen) return null;
 
@@ -124,7 +124,7 @@ export const ManualServiceModal: React.FC<ManualServiceModalProps> = ({
 
   // Observations
   const [observacoes, setObservacoes] = useState('');
-  const [notifyChatwoot, setNotifyChatwoot] = useState(false);
+  const [notifyWhatsApp, setNotifyWhatsApp] = useState(false);
 
   // Attached Document (Invoice / Receipt / OS scan)
   const [attachedDoc, setAttachedDoc] = useState<{
@@ -402,8 +402,8 @@ export const ManualServiceModal: React.FC<ManualServiceModalProps> = ({
       storage.addService(newService);
       onServiceAdded(newService);
 
-      // Optional Chatwoot notification dispatch
-      if (notifyChatwoot && onSendChatwootAlert) {
+      // Aviso opcional pelo WhatsApp (WAHA)
+      if (notifyWhatsApp && onSendWhatsAppAlert) {
         const chatMsg = `🔧 *LANÇAMENTO MANUAL DE SERVIÇO - FLEET TELECOM PA*
 🚗 *Veículo:* ${currentV.modelo} (Placa: ${currentV.placa})
 📍 *Oficina / Fornecedor:* ${finalFornecedorNome} ${numeroOS ? `(OS: #${numeroOS})` : ''}
@@ -413,7 +413,7 @@ export const ManualServiceModal: React.FC<ManualServiceModalProps> = ({
 📅 *Próxima Revisão:* ${Number(proximaRevisaoKm).toLocaleString('pt-BR')} km em ${proximaRevisaoData.split('-').reverse().join('/')}
 👤 *Lançado Manualmente Por:* ${activeUser.nome} (${activeUser.cargo})`;
 
-        await onSendChatwootAlert(chatMsg, currentV.placa);
+        await onSendWhatsAppAlert(chatMsg, currentV.placa);
       }
 
       onClose();
@@ -1050,15 +1050,15 @@ export const ManualServiceModal: React.FC<ManualServiceModalProps> = ({
                 <option value="AGENDADO">Agendado para Data Futura</option>
               </select>
 
-              {onSendChatwootAlert && (
+              {onSendWhatsAppAlert && (
                 <label className="flex items-center gap-2 cursor-pointer mt-1 text-[11px] text-slate-700">
                   <input
                     type="checkbox"
-                    checked={notifyChatwoot}
-                    onChange={e => setNotifyChatwoot(e.target.checked)}
+                    checked={notifyWhatsApp}
+                    onChange={e => setNotifyWhatsApp(e.target.checked)}
                     className="rounded text-sky-600 focus:ring-sky-500"
                   />
-                  <span>Notificar gestores via Chatwoot</span>
+                  <span>Avisar gestores pelo WhatsApp</span>
                 </label>
               )}
             </div>

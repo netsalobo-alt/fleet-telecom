@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Banco SQLite local (dados reais, nunca no git)
+data/
+*.db
+*.db-wal
+*.db-shm

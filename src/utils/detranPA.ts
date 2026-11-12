@@ -727,9 +727,9 @@ export function calcularLicenciamentoPA(
 }
 
 /**
- * Gera mensagem formatada pronta para Chatwoot notificando o motorista/gestor
+ * Gera mensagem formatada pronta para o WhatsApp notificando o motorista/gestor
  */
-export function formatarMensagemChatwootLicenciamento(lic: LicenciamentoPA, modelo: string, motoristaNome?: string): string {
+export function formatarMensagemWhatsAppLicenciamento(lic: LicenciamentoPA, modelo: string, motoristaNome?: string): string {
   const diasMsg = lic.diasRestantes < 0
     ? `🚨 *VENCIDO HÁ ${Math.abs(lic.diasRestantes)} DIAS!*`
     : lic.diasRestantes <= 10

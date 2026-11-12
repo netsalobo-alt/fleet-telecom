@@ -14,26 +14,26 @@ import {
   Filter,
   FileText,
 } from 'lucide-react';
-import { TelemetryAlert, Vehicle, SystemSettings, ChatwootLog, RevisionPlan, LicenciamentoPA } from '../types';
+import { TelemetryAlert, Vehicle, SystemSettings, AlertDispatchLog, RevisionPlan, LicenciamentoPA } from '../types';
 import { LicensePlateBadge } from './LicensePlateBadge';
 import { storage } from '../services/storage';
 
-interface AlertsChatwootViewProps {
+interface AlertsWhatsAppViewProps {
   alerts: TelemetryAlert[];
   vehicles: Vehicle[];
   settings: SystemSettings;
-  chatwootLogs: ChatwootLog[];
+  dispatchLogs: AlertDispatchLog[];
   onAlertsUpdated: () => void;
-  onSendChatwootAlert: (message: string, placa: string, alertaId?: string) => Promise<boolean>;
+  onSendWhatsAppAlert: (message: string, placa: string, alertaId?: string) => Promise<boolean>;
 }
 
-export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
+export const AlertsWhatsAppView: React.FC<AlertsWhatsAppViewProps> = ({
   alerts,
   vehicles,
   settings,
-  chatwootLogs,
+  dispatchLogs,
   onAlertsUpdated,
-  onSendChatwootAlert,
+  onSendWhatsAppAlert,
 }) => {
   const [filterNivel, setFilterNivel] = useState<'ALL' | 'CRITICO' | 'AVISO' | 'INFO'>('ALL');
   const [filterSent, setFilterSent] = useState<'ALL' | 'PENDING' | 'SENT'>('ALL');
@@ -41,6 +41,8 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
   const [selectedPlaca, setSelectedPlaca] = useState(vehicles[0]?.placa || '');
   const [isSendingCustom, setIsSendingCustom] = useState(false);
   const [customSendSuccess, setCustomSendSuccess] = useState(false);
+  const wahaDestinosCount = (settings.waha?.destinos || '').split(/[\n,;]+/).filter(d => d.trim()).length;
+  const wahaReady = Boolean(settings.waha?.baseUrl && wahaDestinosCount > 0);
   const [sendingAlertId, setSendingAlertId] = useState<string | null>(null);
   const [isProcessingAutoAlerts, setIsProcessingAutoAlerts] = useState(false);
   const [autoAlertStatusMsg, setAutoAlertStatusMsg] = useState<string | null>(null);
@@ -81,8 +83,8 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
             nivel: 'CRITICO',
             titulo,
             mensagem: `[ALERTA DE REVISÃO] Veículo ${rev.placa}: O plano de revisão ${rev.titulo} (${rev.item}) está VENCIDO! Quilometragem excedida em ${Math.abs(rev.kmRestantes)} km. Agende manutenção imediata.`,
-            enviadoChatwoot: false,
-            chatwootStatus: 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
           novosAlertas++;
@@ -101,8 +103,8 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
             nivel: 'AVISO',
             titulo,
             mensagem: `[AVISO DE REVISÃO] Veículo ${rev.placa}: O plano de revisão ${rev.titulo} (${rev.item}) vence em ${rev.kmRestantes} km (Data estimada: ${rev.proximaData}).`,
-            enviadoChatwoot: false,
-            chatwootStatus: 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
           novosAlertas++;
@@ -127,8 +129,8 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
             nivel: 'CRITICO',
             titulo,
             mensagem: `[DETRAN-PA] O licenciamento do veículo ${lic.placa} (Exercício ${lic.exercicio}) está VENCIDO desde ${lic.dataLimiteLicenciamento}. Evite apreensão e multas emitindo o DAE.`,
-            enviadoChatwoot: false,
-            chatwootStatus: 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
           novosAlertas++;
@@ -147,8 +149,8 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
             nivel: 'AVISO',
             titulo,
             mensagem: `[DETRAN-PA] Atenção: Licenciamento do veículo ${lic.placa} (Exercício ${lic.exercicio}) vence em ${lic.diasRestantes} dia(s) (Prazo: ${lic.dataLimiteLicenciamento}).`,
-            enviadoChatwoot: false,
-            chatwootStatus: 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
           novosAlertas++;
@@ -179,8 +181,8 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
             nivel: 'AVISO',
             titulo,
             mensagem: `[GPS SELSYN] Veículo ${v.placa} (${v.modelo}) está há mais de 24 horas sem emitir coordenadas GPS. Verifique a bateria ou antena do rastreador.`,
-            enviadoChatwoot: false,
-            chatwootStatus: 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
           novosAlertas++;
@@ -241,17 +243,17 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
 
   const filteredAlerts = alerts.filter(a => {
     if (filterNivel !== 'ALL' && a.nivel !== filterNivel) return false;
-    if (filterSent === 'PENDING' && a.enviadoChatwoot) return false;
-    if (filterSent === 'SENT' && !a.enviadoChatwoot) return false;
+    if (filterSent === 'PENDING' && a.enviadoWhatsApp) return false;
+    if (filterSent === 'SENT' && !a.enviadoWhatsApp) return false;
     return true;
   });
 
   const handleSendSingleAlert = async (alert: TelemetryAlert) => {
     setSendingAlertId(alert.id);
-    const success = await onSendChatwootAlert(alert.mensagem, alert.placa, alert.id);
+    const success = await onSendWhatsAppAlert(alert.mensagem, alert.placa, alert.id);
     setSendingAlertId(null);
     if (success) {
-      storage.markAlertSentChatwoot(alert.id);
+      storage.markAlertSentWhatsApp(alert.id);
       onAlertsUpdated();
     }
   };
@@ -266,7 +268,7 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
     if (!customMessage.trim()) return;
 
     setIsSendingCustom(true);
-    const success = await onSendChatwootAlert(customMessage, selectedPlaca);
+    const success = await onSendWhatsAppAlert(customMessage, selectedPlaca);
     setIsSendingCustom(false);
 
     if (success) {
@@ -277,10 +279,10 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
   };
 
   const handleSendAllPending = async () => {
-    const pendings = alerts.filter(a => !a.enviadoChatwoot);
+    const pendings = alerts.filter(a => !a.enviadoWhatsApp);
     for (const a of pendings) {
-      await onSendChatwootAlert(a.mensagem, a.placa, a.id);
-      storage.markAlertSentChatwoot(a.id);
+      await onSendWhatsAppAlert(a.mensagem, a.placa, a.id);
+      storage.markAlertSentWhatsApp(a.id);
     }
     onAlertsUpdated();
   };
@@ -295,11 +297,11 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
               <MessageSquare className="w-4 h-4" />
             </div>
             <h1 className="text-xl font-bold text-[#00375a]">
-              Central de Alertas &amp; Integração Chatwoot
+              Central de Alertas &amp; Lembretes WhatsApp
             </h1>
           </div>
           <p className="text-slate-600 text-xs sm:text-sm mt-1">
-            Notificações operacionais em tempo real: excesso de velocidade, manutenção vencida e licenciamento DETRAN-PA disparados diretamente para o Chatwoot.
+            Notificações operacionais em tempo real: excesso de velocidade, manutenção vencida e licenciamento DETRAN-PA enviados direto no WhatsApp pela WAHA.
           </p>
         </div>
 
@@ -331,7 +333,7 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
         </div>
       )}
 
-      {/* Chatwoot Connection Status Banner */}
+      {/* WhatsApp (WAHA) Status Banner */}
       <div className="bg-[#00375a] text-white p-5 rounded-xl shadow-md border border-[#1d5277] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center text-cyan-400 border border-cyan-400/30">
@@ -339,13 +341,21 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-sm">Canal Chatwoot Conectado</span>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.2 rounded font-extrabold uppercase">
-                Online
-              </span>
+              <span className="font-bold text-sm">WhatsApp pela WAHA</span>
+              {wahaReady ? (
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded font-extrabold uppercase">
+                  Configurado
+                </span>
+              ) : (
+                <span className="text-[10px] bg-amber-500/20 text-amber-200 border border-amber-400/40 px-2 py-0.5 rounded font-extrabold uppercase">
+                  Não configurado
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-300 mt-0.5 font-mono">
-              Instância: {settings.chatwoot.baseUrl || 'https://chatwoot.suaempresa.com.br'} • Conta #{settings.chatwoot.accountId || '1'} • Caixa #{settings.chatwoot.inboxId || '4'}
+              {wahaReady
+                ? `Servidor: ${settings.waha.baseUrl} • Sessão: ${settings.waha.session || 'default'} • ${wahaDestinosCount} destinatário(s)`
+                : 'Informe URL, sessão e destinatários em Configurações. Até lá os lembretes ficam só no histórico.'}
             </p>
           </div>
         </div>
@@ -445,9 +455,9 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
                           {alert.nivel}
                         </span>
 
-                        {alert.enviadoChatwoot && (
+                        {alert.enviadoWhatsApp && (
                           <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                            <Check className="w-2.5 h-2.5 text-emerald-600" /> Chatwoot
+                            <Check className="w-2.5 h-2.5 text-emerald-600" /> WhatsApp
                           </span>
                         )}
                       </div>
@@ -478,22 +488,22 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
                         onClick={() => handleSendSingleAlert(alert)}
                         disabled={sendingAlertId === alert.id}
                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border shadow-xs ${
-                          alert.enviadoChatwoot
+                          alert.enviadoWhatsApp
                             ? 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                             : 'bg-cyan-600 hover:bg-cyan-700 text-white border-transparent'
                         }`}
                       >
                         {sendingAlertId === alert.id ? (
                           <span>Disparando...</span>
-                        ) : alert.enviadoChatwoot ? (
+                        ) : alert.enviadoWhatsApp ? (
                           <>
                             <RotateCcw className="w-3 h-3 text-slate-400" />
-                            <span>Reenviar ao Chatwoot</span>
+                            <span>Reenviar no WhatsApp</span>
                           </>
                         ) : (
                           <>
                             <Send className="w-3 h-3 text-white" />
-                            <span>Enviar via Chatwoot</span>
+                            <span>Enviar no WhatsApp</span>
                           </>
                         )}
                       </button>
@@ -505,14 +515,14 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Custom Message Composer & Chatwoot Dispatch Logs (5 cols) */}
+        {/* Right: Custom Message Composer & WhatsApp Dispatch Logs (5 cols) */}
         <div className="lg:col-span-5 space-y-5">
           {/* Quick Message Composer */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
             <div className="flex items-center gap-2 border-b pb-2">
               <Send className="w-4 h-4 text-cyan-600" />
               <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800">
-                Disparar Mensagem Manual no Chatwoot
+                Enviar mensagem manual no WhatsApp
               </h3>
             </div>
 
@@ -550,7 +560,7 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
               {customSendSuccess && (
                 <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs p-2.5 rounded-lg flex items-center gap-1.5 font-semibold">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Mensagem disparada com sucesso para o canal do Chatwoot!</span>
+                  <span>Mensagem enviada pelo WhatsApp!</span>
                 </div>
               )}
 
@@ -573,22 +583,22 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
             </form>
           </div>
 
-          {/* Chatwoot Dispatch Logs */}
+          {/* WhatsApp Dispatch Logs */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3">
             <div className="flex items-center justify-between border-b pb-2">
               <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800">
-                Histórico de Disparos Chatwoot ({chatwootLogs.length})
+                Histórico de envios WhatsApp ({dispatchLogs.length})
               </h3>
               <span className="text-[10px] text-slate-400">Últimos envios</span>
             </div>
 
             <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
-              {chatwootLogs.length === 0 ? (
+              {dispatchLogs.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-6">
                   Nenhum registro de disparo armazenado nesta sessão.
                 </p>
               ) : (
-                chatwootLogs.map(log => (
+                dispatchLogs.map(log => (
                   <div
                     key={log.id}
                     className="p-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs space-y-1"
@@ -608,7 +618,7 @@ export const AlertsChatwootView: React.FC<AlertsChatwootViewProps> = ({
                     <p className="text-slate-600 text-[11px] line-clamp-2">{log.mensagem}</p>
                     <div className="text-[10px] text-slate-400 flex justify-between">
                       <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
-                      <span>{log.detalhe || 'Canal API Chatwoot'}</span>
+                      <span>{log.detalhe || 'WhatsApp (WAHA)'}</span>
                     </div>
                   </div>
                 ))

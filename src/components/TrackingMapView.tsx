@@ -20,12 +20,13 @@ import {
 } from 'lucide-react';
 import { Vehicle, IntegrationLog } from '../types';
 import { LicensePlateBadge } from './LicensePlateBadge';
+import { FleetMap } from './FleetMap';
 import { storage } from '../services/storage';
 
 interface TrackingMapViewProps {
   vehicles: Vehicle[];
   onVehiclesUpdated: () => void;
-  onSendChatwootAlert: (message: string, placa: string) => Promise<boolean>;
+  onSendWhatsAppAlert: (message: string, placa: string) => Promise<boolean>;
 }
 
 // Format communication timestamp with exact hour, minute, second
@@ -131,7 +132,7 @@ export function getCommunicationDetails(dateStr?: string) {
 export const TrackingMapView: React.FC<TrackingMapViewProps> = ({
   vehicles,
   onVehiclesUpdated,
-  onSendChatwootAlert,
+  onSendWhatsAppAlert,
 }) => {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>(vehicles[0]?.id || '');
   const [filterMode, setFilterMode] = useState<'ALL' | 'MOVING' | 'STOPPED' | 'ALERT'>('ALL');
@@ -166,21 +167,6 @@ export const TrackingMapView: React.FC<TrackingMapViewProps> = ({
     }
     return true;
   });
-
-  // Calculate coordinates bounds for Pará SVG Map
-  const minLat = -7.5;
-  const maxLat = -0.5;
-  const minLng = -55.5;
-  const maxLng = -47.0;
-
-  const projectToMap = (lat: number, lng: number) => {
-    const x = ((lng - minLng) / (maxLng - minLng)) * 100;
-    const y = ((maxLat - lat) / (maxLat - minLat)) * 100;
-    return {
-      x: Math.max(8, Math.min(92, x)),
-      y: Math.max(8, Math.min(92, y)),
-    };
-  };
 
   // Direct Plate Query State
   const [directPlateInput, setDirectPlateInput] = useState('');
@@ -843,162 +829,38 @@ export const TrackingMapView: React.FC<TrackingMapViewProps> = ({
         </div>
 
         {/* Center: High-Definition Interactive Telemetry Map (Pará) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-4 flex flex-col justify-between space-y-4">
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-sky-600" />
               <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800">
-                Cobertura Geoespacial - Estado do Pará
+                Mapa da frota
               </h3>
             </div>
-            <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-              BR-316 • BR-230 • PA-150
+            <span className="text-[11px] text-slate-500">
+              Clique num veículo para ver os detalhes
             </span>
           </div>
 
-          {/* Interactive Map Canvas */}
-          <div className="relative w-full aspect-[4/3] bg-slate-900 rounded-xl overflow-hidden border border-slate-700 shadow-inner select-none">
-            {/* Grid Lines */}
-            <div className="absolute inset-0 opacity-15 bg-[linear-gradient(to_right,#38bdf8_1px,transparent_1px),linear-gradient(to_bottom,#38bdf8_1px,transparent_1px)] bg-[size:40px_40px]"></div>
-
-            {/* Pará Geographic Background Silhouette (Rivers & Roads) */}
-            <svg
-              className="absolute inset-0 w-full h-full pointer-events-none opacity-25"
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-            >
-              {/* Rivers Amazonas / Tapajós / Tocantins */}
-              <path
-                d="M 10 30 Q 30 35, 50 32 T 85 28 T 95 35"
-                fill="none"
-                stroke="#0284c7"
-                strokeWidth="1.5"
-                strokeDasharray="2 1"
-              />
-              <path
-                d="M 85 28 Q 78 55, 75 85"
-                fill="none"
-                stroke="#06b6d4"
-                strokeWidth="1"
-              />
-              {/* Main Highway corridors */}
-              <path
-                d="M 85 30 L 92 38"
-                fill="none"
-                stroke="#f59e0b"
-                strokeWidth="0.8"
-                strokeDasharray="1 1"
-              />
-              <path
-                d="M 75 85 L 20 80"
-                fill="none"
-                stroke="#f59e0b"
-                strokeWidth="0.8"
-                strokeDasharray="1 1"
-              />
-            </svg>
-
-            {/* City Label Badges on Map */}
-            <div className="absolute top-[28%] right-[8%] text-[9px] font-bold text-sky-300 flex items-center gap-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span> Belém / Ananindeua
-            </div>
-            <div className="absolute top-[34%] right-[16%] text-[8px] font-semibold text-slate-400">
-              Castanhal
-            </div>
-            <div className="absolute top-[28%] left-[10%] text-[8px] font-semibold text-slate-400">
-              Santarém / Tapajós
-            </div>
-            <div className="absolute top-[68%] right-[22%] text-[8px] font-semibold text-slate-400">
-              Marabá (BR-230)
-            </div>
-            <div className="absolute bottom-[18%] right-[16%] text-[8px] font-semibold text-slate-400">
-              Parauapebas / Carajás
-            </div>
-
-            {/* Vehicle Markers */}
-            {vehicles.map(v => {
-              const coords = projectToMap(v.localizacao.lat, v.localizacao.lng);
-              const isSelected = v.id === selectedVehicle?.id;
-              const isMoving = v.ignicao && v.velocidade > 0;
-              const isBlocked = v.bloqueado;
-              const comm = getCommunicationDetails(v.ultimaComunicacao);
-
-              return (
-                <div
-                  key={v.id}
-                  onClick={() => setSelectedVehicleId(v.id)}
-                  style={{ left: `${coords.x}%`, top: `${coords.y}%` }}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer z-10 group"
-                >
-                  {/* Ping effect if online and moving */}
-                  {isMoving && (
-                    <span className="absolute -inset-2 rounded-full bg-sky-400 opacity-60 animate-ping"></span>
-                  )}
-
-                  {/* Marker Pin */}
-                  <div
-                    className={`relative p-1.5 rounded-full shadow-lg border-2 transition-all transform group-hover:scale-125 ${
-                      isSelected
-                        ? 'bg-amber-400 text-slate-950 border-white ring-2 ring-amber-400 scale-125 z-20'
-                        : isBlocked
-                        ? 'bg-red-600 text-white border-white'
-                        : isMoving
-                        ? 'bg-emerald-600 text-white border-white'
-                        : 'bg-slate-700 text-slate-200 border-slate-400'
-                    }`}
-                  >
-                    <Navigation
-                      className={`w-3.5 h-3.5 transform ${
-                        isMoving ? 'rotate-45' : 'rotate-0'
-                      }`}
-                    />
-                  </div>
-
-                  {/* Tooltip with Plate, Speed, Time and Google Maps */}
-                  <div
-                    className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 rounded-lg text-[10px] shadow-xl pointer-events-auto transition-opacity z-30 min-w-[160px] ${
-                      isSelected
-                        ? 'bg-white text-slate-900 border border-slate-300 opacity-100'
-                        : 'bg-slate-900/95 text-white opacity-0 group-hover:opacity-100'
-                    }`}
-                  >
-                    <div className="font-bold flex items-center justify-between">
-                      <span>{v.placa}</span>
-                      <span className="text-[9px] font-mono text-cyan-600">
-                        {isMoving ? `${v.velocidade} km/h` : 'Parado'}
-                      </span>
-                    </div>
-                    <div className="text-[9px] text-slate-500 font-mono mt-0.5">
-                      ⏱️ Comunicou: {comm.timeOnly}
-                    </div>
-                    <div className="mt-1 pt-1 border-t border-slate-200/60">
-                      <a
-                        href={`https://www.google.com/maps?q=${v.localizacao.lat},${v.localizacao.lng}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[9px] text-sky-600 hover:underline flex items-center gap-1 font-bold"
-                      >
-                        <ExternalLink className="w-2.5 h-2.5" />
-                        <span>Abrir no Google Maps</span>
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {/* Mapa real (OpenStreetMap) */}
+          <FleetMap
+            vehicles={vehicles}
+            selectedId={selectedVehicle?.id}
+            onSelect={setSelectedVehicleId}
+            className="w-full flex-1 min-h-[420px] lg:min-h-[560px]"
+          />
 
           {/* Map Controls Footer */}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 pt-1 border-t border-slate-200">
             <div className="flex items-center gap-3 text-[11px]">
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Em Rota
+                <span className="w-2.5 h-2.5 rounded-full bg-brand-green"></span> Em rota
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-slate-500"></span> Desligado
+                <span className="w-2.5 h-2.5 rounded-full bg-[#56677a]"></span> Parado / desligado
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-red-500"></span> Bloqueado
+                <span className="w-2.5 h-2.5 rounded-full bg-[#b8473a]"></span> Bloqueado
               </span>
             </div>
             <span className="text-[10px] text-slate-400 font-mono">

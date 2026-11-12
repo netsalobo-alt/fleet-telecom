@@ -21,7 +21,7 @@ import { LicenciamentoPA, Vehicle } from '../types';
 import { LicensePlateBadge } from './LicensePlateBadge';
 import {
   DETRAN_PA_CALENDARIO_2026,
-  formatarMensagemChatwootLicenciamento,
+  formatarMensagemWhatsAppLicenciamento,
 } from '../utils/detranPA';
 import { storage } from '../services/storage';
 
@@ -29,14 +29,14 @@ interface LicenciamentoPAViewProps {
   vehicles: Vehicle[];
   licensingList: LicenciamentoPA[];
   onLicensingUpdated: () => void;
-  onSendChatwootAlert: (message: string, placa: string) => Promise<boolean>;
+  onSendWhatsAppAlert: (message: string, placa: string) => Promise<boolean>;
 }
 
 export const LicenciamentoPAView: React.FC<LicenciamentoPAViewProps> = ({
   vehicles,
   licensingList,
   onLicensingUpdated,
-  onSendChatwootAlert,
+  onSendWhatsAppAlert,
 }) => {
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -126,16 +126,16 @@ export const LicenciamentoPAView: React.FC<LicenciamentoPAViewProps> = ({
     return acc;
   }, {} as Record<string, LicenciamentoPA[]>);
 
-  const handleSendChatwootAlert = async (lic: LicenciamentoPA) => {
+  const handleSendWhatsAppAlert = async (lic: LicenciamentoPA) => {
     setSendingPlaca(lic.placa);
     const vehicle = vehicles.find(v => v.placa === lic.placa);
-    const message = formatarMensagemChatwootLicenciamento(
+    const message = formatarMensagemWhatsAppLicenciamento(
       lic,
       vehicle?.modelo || 'Veículo da Frota',
       vehicle?.motoristaNome
     );
 
-    const success = await onSendChatwootAlert(message, lic.placa);
+    const success = await onSendWhatsAppAlert(message, lic.placa);
     setSendingPlaca(null);
     if (success) {
       setSentSuccessPlaca(lic.placa);
@@ -649,11 +649,11 @@ export const LicenciamentoPAView: React.FC<LicenciamentoPAViewProps> = ({
                       {/* Ações */}
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Chatwoot Alert Button */}
+                          {/* WhatsApp Reminder Button */}
                           <button
-                            onClick={() => handleSendChatwootAlert(lic)}
+                            onClick={() => handleSendWhatsAppAlert(lic)}
                             disabled={sendingPlaca === lic.placa || sentSuccessPlaca === lic.placa}
-                            title="Disparar Alerta com demonstrativo no Chatwoot"
+                            title="Enviar lembrete com demonstrativo pelo WhatsApp"
                             className={`p-1.5 rounded-md border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
                               sentSuccessPlaca === lic.placa
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
@@ -666,7 +666,7 @@ export const LicenciamentoPAView: React.FC<LicenciamentoPAViewProps> = ({
                               <Send className="w-3.5 h-3.5 text-cyan-600" />
                             )}
                             <span className="hidden sm:inline">
-                              {sentSuccessPlaca === lic.placa ? 'Enviado' : 'Chatwoot'}
+                              {sentSuccessPlaca === lic.placa ? 'Enviado' : 'WhatsApp'}
                             </span>
                           </button>
 
@@ -1246,10 +1246,10 @@ export const LicenciamentoPAView: React.FC<LicenciamentoPAViewProps> = ({
                               <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
                                 <button
                                   type="button"
-                                  onClick={() => handleSendChatwootAlert(lic)}
+                                  onClick={() => handleSendWhatsAppAlert(lic)}
                                   disabled={sendingPlaca === lic.placa}
                                   className="flex items-center gap-1 text-[11px] font-semibold text-cyan-800 hover:text-cyan-950 bg-cyan-50 hover:bg-cyan-100 px-2.5 py-1.5 rounded-lg border border-cyan-200 transition-colors cursor-pointer"
-                                  title="Disparar lembrete via Chatwoot para o motorista deste veículo"
+                                  title="Enviar lembrete pelo WhatsApp sobre este veículo"
                                 >
                                   {sentSuccessPlaca === lic.placa ? (
                                     <>
@@ -1259,7 +1259,7 @@ export const LicenciamentoPAView: React.FC<LicenciamentoPAViewProps> = ({
                                   ) : (
                                     <>
                                       <Send className="w-3.5 h-3.5 text-cyan-700" />
-                                      <span>Notificar Chatwoot</span>
+                                      <span>Lembrete no WhatsApp</span>
                                     </>
                                   )}
                                 </button>

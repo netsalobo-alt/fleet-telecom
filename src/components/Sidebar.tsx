@@ -18,12 +18,16 @@ import {
   X,
   Plus,
   Key,
+  IdCard,
+  LogOut,
 } from 'lucide-react';
-import { TelemetryAlert, Vehicle, SystemUser, RevisionPlan } from '../types';
+import { TelemetryAlert, Vehicle, SystemUser, RevisionPlan, USER_ROLE_SHORT } from '../types';
+import { canAccessTab } from '../services/permissions';
 
 export type TabType =
   | 'dashboard'
   | 'vehicles'
+  | 'drivers'
   | 'suppliers'
   | 'maintenance'
   | 'reports'
@@ -41,10 +45,11 @@ interface SidebarProps {
   alerts: TelemetryAlert[];
   revisions?: RevisionPlan[];
   currentUser?: SystemUser;
-  onSwitchUser?: (user: SystemUser) => void;
+  onLogout?: () => void;
+  /** Estado do salvamento no servidor. */
+  syncStatus?: 'salvo' | 'salvando' | 'offline' | 'erro';
   onOpenUserManagement?: () => void;
-  users?: SystemUser[];
-  chatwootConnected: boolean;
+  whatsappConnected: boolean;
   trackingConnected: boolean;
   isCollapsed: boolean;
   setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
@@ -86,10 +91,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   alerts,
   revisions = [],
   currentUser,
-  onSwitchUser,
+  onLogout,
+  syncStatus = 'salvo',
   onOpenUserManagement,
-  users = [],
-  chatwootConnected,
+  whatsappConnected,
   trackingConnected,
   isCollapsed,
   setIsCollapsed,
@@ -102,9 +107,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const warningRevisions = revisions.filter(r => r.status === 'PROXIMO').length;
   const activeVehicles = vehicles.filter(v => v.status === 'OPERANDO').length;
 
-  const navItems: NavItem[] = [
+  const allNavItems: NavItem[] = [
     { id: 'dashboard', label: 'Visão geral', icon: LayoutGrid, section: 'Principal' },
     { id: 'vehicles', label: 'Frota', icon: Car, badge: vehicles.length, badgeTone: 'accent', section: 'Cadastros' },
+    { id: 'drivers', label: 'Motoristas', icon: IdCard, section: 'Cadastros' },
     { id: 'suppliers', label: 'Fornecedores', icon: Building2, section: 'Cadastros' },
     {
       id: 'revisions',
@@ -129,6 +135,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     { id: 'config', label: 'Configurações', icon: Settings, section: 'Sistema' },
   ];
+  // Cada pessoa só vê os módulos liberados no perfil dela
+  const navItems = allNavItems.filter(item => !currentUser || canAccessTab(currentUser, item.id));
 
   const handleSelectTab = (id: TabType) => {
     setCurrentTab(id);
@@ -173,7 +181,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      {/* Ação principal */}
+      {/* Ação principal (só para quem pode lançar) */}
+      {(!currentUser || canAccessTab(currentUser, 'maintenance')) && (
       <div className={`px-3 pb-2 ${isCollapsed ? 'flex justify-center px-2' : ''}`}>
         <button
           type="button"
@@ -188,6 +197,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {!isCollapsed && <span>Lançar serviço</span>}
         </button>
       </div>
+      )}
 
       {/* Navegação */}
       <div className="flex-1 overflow-y-auto no-scrollbar px-3 py-2">
@@ -259,12 +269,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="flex items-center gap-2 text-white/80">
               <span
                 aria-hidden="true"
-                className={`w-2 h-2 rounded-full ${chatwootConnected ? 'bg-brand-green' : 'bg-amber-400'}`}
+                className={`w-2 h-2 rounded-full ${whatsappConnected ? 'bg-brand-green' : 'bg-amber-400'}`}
               />
-              Chatwoot
+              WhatsApp
             </span>
-            <span className={`font-semibold ${chatwootConnected ? 'text-brand-green' : 'text-amber-300'}`}>
-              {chatwootConnected ? 'Conectado' : 'Não configurado'}
+            <span className={`font-semibold ${whatsappConnected ? 'text-brand-green' : 'text-amber-300'}`}>
+              {whatsappConnected ? 'Configurado' : 'Não configurado'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-2" role="status" aria-live="polite">
+            <span className="flex items-center gap-2 text-white/80">
+              <span
+                aria-hidden="true"
+                className={`w-2 h-2 rounded-full ${
+                  syncStatus === 'salvo' ? 'bg-brand-green' : syncStatus === 'salvando' ? 'bg-cyan-300 animate-pulse' : 'bg-amber-400'
+                }`}
+              />
+              Dados
+            </span>
+            <span className={`font-semibold ${syncStatus === 'salvo' || syncStatus === 'salvando' ? 'text-white' : 'text-amber-300'}`}>
+              {syncStatus === 'salvo' ? 'Salvos' : syncStatus === 'salvando' ? 'Salvando…' : syncStatus === 'offline' ? 'Sem conexão' : 'Erro ao salvar'}
             </span>
           </div>
           <div className="flex items-center justify-between gap-2 text-white/80">
@@ -304,7 +328,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="min-w-0 flex flex-col">
                   <span className="text-[13px] font-semibold text-white truncate">{currentUser.nome}</span>
                   <span className="text-[11px] text-[#9fb0bf]">
-                    {currentUser.cargo === 'GESTOR' ? 'Gestor' : 'Operador'}
+                    {USER_ROLE_SHORT[currentUser.cargo]}
                   </span>
                 </span>
               )}
@@ -312,31 +336,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {!isCollapsed && (
               <div className="flex items-center gap-1">
-                {onSwitchUser && users.length > 1 && (
-                  <select
-                    aria-label="Trocar perfil de demonstração"
-                    value={currentUser.id}
-                    onChange={e => {
-                      const selected = users.find(u => u.id === e.target.value);
-                      if (selected) onSwitchUser(selected);
-                    }}
-                    className="max-w-24 bg-white/10 text-[11px] text-white rounded-lg px-1.5 h-8 cursor-pointer"
-                  >
-                    {users.map(u => (
-                      <option key={u.id} value={u.id} className="text-navy-deep">
-                        {u.nome.split(' ')[0]} ({u.cargo === 'GESTOR' ? 'Gestor' : 'Oper.'})
-                      </option>
-                    ))}
-                  </select>
-                )}
                 {onOpenUserManagement && (
                   <button
                     type="button"
                     onClick={onOpenUserManagement}
                     className="w-8 h-8 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
                     aria-label="Usuários, senhas e permissões"
+                    title="Usuários, senhas e permissões"
                   >
                     <Key className="w-4 h-4" />
+                  </button>
+                )}
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    className="w-8 h-8 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    aria-label="Sair"
+                    title="Sair"
+                  >
+                    <LogOut className="w-4 h-4" />
                   </button>
                 )}
               </div>

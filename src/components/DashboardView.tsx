@@ -30,7 +30,9 @@ interface DashboardViewProps {
   licensingList: LicenciamentoPA[];
   alerts: TelemetryAlert[];
   setCurrentTab: (tab: TabType) => void;
-  onSendChatwootAlert: (message: string, placa: string) => Promise<boolean>;
+  /** O usuário pode lançar serviços? Esconde o botão de quem não pode. */
+  canLaunch?: boolean;
+  onSendWhatsAppAlert: (message: string, placa: string) => Promise<boolean>;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -40,7 +42,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   licensingList,
   alerts,
   setCurrentTab,
-  onSendChatwootAlert,
+  canLaunch = true,
+  onSendWhatsAppAlert,
 }) => {
   const [isGeneratingAiReport, setIsGeneratingAiReport] = useState(false);
   const [aiReport, setAiReport] = useState<any | null>(null);
@@ -90,7 +93,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const handleSendDraftAlert = async (text: string, index: number) => {
     setSentAlertIndex(index);
-    await onSendChatwootAlert(text, 'FROTA-PA');
+    await onSendWhatsAppAlert(text, 'FROTA-PA');
     setTimeout(() => setSentAlertIndex(null), 3000);
   };
 
@@ -125,6 +128,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </>
             )}
           </button>
+          {canLaunch && (
           <button
             type="button"
             onClick={() => setCurrentTab('maintenance')}
@@ -133,6 +137,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Sparkles className="w-4 h-4" />
             <span>Lançar serviço</span>
           </button>
+          )}
         </div>
       </header>
 
@@ -281,14 +286,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           )}
 
-          {/* Chatwoot Drafted Alerts */}
-          {aiReport.chatwootAlertas && aiReport.chatwootAlertas.length > 0 && (
+          {/* Alertas sugeridos para o WhatsApp */}
+          {aiReport.whatsappAlertas && aiReport.whatsappAlertas.length > 0 && (
             <div className="space-y-2 pt-2">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                Alertas Prontos para Transmissão via Chatwoot:
+                Alertas prontos para enviar pelo WhatsApp:
               </span>
               <div className="space-y-2">
-                {aiReport.chatwootAlertas.map((msg: string, i: number) => (
+                {aiReport.whatsappAlertas.map((msg: string, i: number) => (
                   <div
                     key={i}
                     className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white p-3 rounded-lg border border-slate-200 text-xs"
@@ -306,7 +311,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       ) : (
                         <>
                           <Send className="w-3.5 h-3.5" />
-                          <span>Disparar no Chatwoot</span>
+                          <span>Enviar no WhatsApp</span>
                         </>
                       )}
                     </button>
@@ -499,12 +504,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Quick Chatwoot Dispatch Banner */}
+          {/* Quick WhatsApp Dispatch Banner */}
           <div className="bg-slate-900 text-white p-5 rounded-xl shadow-md border border-slate-700 space-y-3">
             <div className="flex items-center gap-2">
               <Radio className="w-4 h-4 text-cyan-400" />
               <h4 className="font-bold text-xs uppercase tracking-wider text-cyan-300">
-                Integração Chatwoot Pronta
+                Lembretes pelo WhatsApp
               </h4>
             </div>
             <p className="text-xs text-slate-300">

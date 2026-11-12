@@ -40,3 +40,9 @@ database/dumps
 coverage
 *.md
 !README.md
+
+# Banco SQLite local (dados reais nunca entram na imagem)
+data
+*.db
+*.db-wal
+*.db-shm

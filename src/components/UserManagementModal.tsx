@@ -23,10 +23,9 @@ import {
   Check,
   Clock,
   Sparkles,
-  LogIn,
   Search,
 } from 'lucide-react';
-import { SystemUser, UserRole, UserPermissions } from '../types';
+import { SystemUser, UserRole, UserPermissions, USER_ROLE_LABEL } from '../types';
 import { storage, getDefaultPermissionsByRole } from '../services/storage';
 
 interface UserManagementModalProps {
@@ -85,10 +84,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
-  // Fast Switch with Password Modal
-  const [switchTargetUser, setSwitchTargetUser] = useState<SystemUser | null>(null);
-  const [switchPasswordInput, setSwitchPasswordInput] = useState('');
-  const [switchError, setSwitchError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -102,7 +97,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     setEditingUserId(null);
     setFormNome('');
     setFormLogin('');
-    setFormSenha('123');
+    setFormSenha('');
     setShowPassword(false);
     setFormEmail('');
     setFormTelefone('');
@@ -124,7 +119,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     setEditingUserId(user.id);
     setFormNome(user.nome);
     setFormLogin(user.login || user.email.split('@')[0]);
-    setFormSenha(user.senha || '123');
+    setFormSenha(''); // a senha atual não fica no navegador; em branco = mantém
     setShowPassword(false);
     setFormEmail(user.email);
     setFormTelefone(user.telefone || '');
@@ -201,8 +196,12 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       return;
     }
 
-    if (!cleanSenha) {
-      setFormError('Informe a senha de acesso.');
+    if (!editingUserId && cleanSenha.length < 6) {
+      setFormError('Defina uma senha com pelo menos 6 caracteres.');
+      return;
+    }
+    if (editingUserId && cleanSenha && cleanSenha.length < 6) {
+      setFormError('A nova senha precisa de pelo menos 6 caracteres.');
       return;
     }
 
@@ -233,15 +232,12 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         id: editingUserId,
         nome: cleanNome,
         login: cleanLogin,
-        senha: cleanSenha,
+        ...(cleanSenha ? { senha: cleanSenha } : {}),
         email: formEmail.trim() || `${cleanLogin}@fleet-telecom.com.br`,
         telefone: formTelefone.trim(),
         cpf: formCpf.trim(),
         cargo: formCargo,
         status: formStatus,
-        cnh: formCargo === 'MOTORISTA' ? formCnh.trim() : undefined,
-        cnhValidade: formCargo === 'MOTORISTA' ? formCnhValidade.trim() : undefined,
-        cnhCategoria: formCargo === 'MOTORISTA' ? formCnhCategoria.trim() : undefined,
         dataCriacao: users.find(u => u.id === editingUserId)?.dataCriacao || new Date().toISOString(),
         permissoes: permissionsPayload,
       };
@@ -266,9 +262,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         cpf: formCpf.trim(),
         cargo: formCargo,
         status: formStatus,
-        cnh: formCargo === 'MOTORISTA' ? formCnh.trim() : undefined,
-        cnhValidade: formCargo === 'MOTORISTA' ? formCnhValidade.trim() : undefined,
-        cnhCategoria: formCargo === 'MOTORISTA' ? formCnhCategoria.trim() : undefined,
         dataCriacao: new Date().toISOString(),
         permissoes: permissionsPayload,
       };
@@ -313,27 +306,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     refreshList();
   };
 
-  const handleStartSwitch = (user: SystemUser) => {
-    if (user.id === currentUser.id) return;
-    setSwitchTargetUser(user);
-    setSwitchPasswordInput('');
-    setSwitchError(null);
-  };
-
-  const handleConfirmSwitch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!switchTargetUser) return;
-
-    if (switchTargetUser.senha && switchPasswordInput !== switchTargetUser.senha) {
-      setSwitchError('Senha incorreta para este usuário.');
-      return;
-    }
-
-    storage.setActiveUser(switchTargetUser);
-    onUserChanged(switchTargetUser);
-    setSwitchTargetUser(null);
-    onClose();
-  };
 
   const filteredUsers = users.filter(u => {
     const s = searchTerm.toLowerCase();
@@ -354,7 +326,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     { id: 'detran', label: 'IPVA', desc: 'Licenciamento e calendário estadual do Pará' },
     { id: 'tracking', label: 'Rastreamento GPS Selsyn', desc: 'Mapa em tempo real e telemetria' },
     { id: 'reports', label: 'Relatórios de Gastos', desc: 'Estatísticas e centro de custos' },
-    { id: 'alerts', label: 'Alertas & Chatwoot', desc: 'Notificações operacionais e bot WhatsApp' },
+    { id: 'alerts', label: 'Alertas & WhatsApp', desc: 'Notificações operacionais e lembretes pelo WhatsApp' },
     { id: 'config', label: 'Configurações', desc: 'Tokens, APIs, calendário e banco de dados' },
   ];
 
@@ -491,11 +463,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                                       : 'bg-emerald-100 text-emerald-800'
                                   }`}
                                 >
-                                  {u.cargo === 'GESTOR'
-                                    ? 'Gestor / Administrador'
-                                    : u.cargo === 'OPERADOR'
-                                    ? 'Operador de Lançamentos'
-                                    : u.cargo}
+                                  {USER_ROLE_LABEL[u.cargo] ?? u.cargo}
                                 </span>
 
                                 <span
@@ -518,11 +486,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                               <div className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
                                 <span>{u.email}</span>
                                 {u.telefone && <span>• {u.telefone}</span>}
-                                {u.senha && (
-                                  <span className="text-slate-400 font-mono text-[11px]">
-                                    • Senha: ••••
-                                  </span>
-                                )}
                               </div>
 
                               {/* Privileges summary badges */}
@@ -576,17 +539,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
                           {/* Actions */}
                           <div className="flex items-center gap-1.5 self-end md:self-center shrink-0">
-                            {!isSelf && (
-                              <button
-                                type="button"
-                                onClick={() => handleStartSwitch(u)}
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
-                                title="Entrar como este usuário"
-                              >
-                                <LogIn className="w-3.5 h-3.5 text-sky-600" />
-                                <span>Entrar</span>
-                              </button>
-                            )}
 
                             <button
                               type="button"
@@ -714,13 +666,14 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">
-                      Senha de Acesso: *
+                      {editingUserId ? 'Nova senha:' : 'Senha de acesso: *'}
                     </label>
                     <div className="relative">
                       <input
                         type={showPassword ? 'text' : 'password'}
-                        required
-                        placeholder="Digite a senha"
+                        required={!editingUserId}
+                        autoComplete="new-password"
+                        placeholder={editingUserId ? 'Em branco para manter a atual' : 'Mínimo de 6 caracteres'}
                         value={formSenha}
                         onChange={e => setFormSenha(e.target.value)}
                         className="w-full border border-slate-300 rounded-lg pl-3 pr-9 py-2.5 bg-white text-slate-900 font-mono font-semibold focus:border-sky-500 outline-none"
@@ -735,23 +688,23 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       </button>
                     </div>
                     <span className="text-[10px] text-slate-400 mt-0.5 block">
-                      Padrão de demonstração: 123
+                      {editingUserId ? 'Só preencha para trocar a senha.' : 'A senha fica guardada só no servidor, de forma ilegível.'}
                     </span>
                   </div>
 
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">
-                      Perfil / Cargo Base:
+                      Perfil de acesso:
                     </label>
                     <select
                       value={formCargo}
                       onChange={e => handleRoleChange(e.target.value as UserRole)}
                       className="w-full border border-slate-300 rounded-lg p-2.5 bg-white font-semibold text-slate-900 focus:border-sky-500 outline-none"
                     >
-                      <option value="GESTOR">Gestor / Administrador (Acesso e Edição Irrestrita)</option>
-                      <option value="OPERADOR">Operador de Lançamentos (Lança e Edita 24h)</option>
-                      <option value="MOTORISTA">Motorista Operacional</option>
-                      <option value="VISUALIZADOR">Auditor / Visualizador (Somente Leitura)</option>
+                      <option value="GESTOR">Gestor / gerente (acesso total)</option>
+                      <option value="OPERADOR">Supervisor / operador (lança e edita as próprias notas por 24h)</option>
+                      <option value="MOTORISTA">Motorista (lança as notas dos serviços que fez)</option>
+                      <option value="VISUALIZADOR">Somente leitura (auditoria)</option>
                     </select>
                   </div>
 
@@ -1006,71 +959,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         </div>
       </div>
 
-      {/* Switch User with Password Sub-modal */}
-      {switchTargetUser && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 border border-slate-300 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2">
-                <LogIn className="w-4 h-4 text-sky-600" />
-                <h4 className="font-bold text-sm text-[#00375a]">
-                  Confirmar Acesso: {switchTargetUser.nome}
-                </h4>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSwitchTargetUser(null)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600">
-              Para alternar para o perfil de <strong>{switchTargetUser.nome}</strong> (@{switchTargetUser.login}), informe a senha de acesso:
-            </p>
-
-            {switchError && (
-              <div className="p-2.5 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
-                {switchError}
-              </div>
-            )}
-
-            <form onSubmit={handleConfirmSwitch} className="space-y-3">
-              <div>
-                <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                  Senha do Usuário:
-                </label>
-                <input
-                  type="password"
-                  required
-                  autoFocus
-                  placeholder="Digite a senha (padrão: 123)"
-                  value={switchPasswordInput}
-                  onChange={e => setSwitchPasswordInput(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg outline-none focus:border-sky-500 font-mono"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setSwitchTargetUser(null)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-brand-navy hover:bg-navy-deep text-white text-xs font-bold"
-                >
-                  Entrar
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

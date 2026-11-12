@@ -1323,7 +1323,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
             {/* Modal Footer */}
             <div className="bg-slate-50 border-t border-slate-200 p-4 flex items-center justify-between shrink-0">
               <span className="text-xs text-slate-500">
-                Histórico auditado e preservado pela integridade do Supabase PostgreSQL.
+                Histórico auditado e preservado no banco do sistema.
               </span>
               <button
                 onClick={() => setViewingHistorySupplier(null)}

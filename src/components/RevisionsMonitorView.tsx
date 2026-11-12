@@ -46,7 +46,7 @@ interface RevisionsMonitorViewProps {
   revisions: RevisionPlan[];
   currentUser?: SystemUser;
   onRevisionsUpdated: () => void;
-  onSendChatwootAlert: (message: string, placa: string) => Promise<boolean>;
+  onSendWhatsAppAlert: (message: string, placa: string) => Promise<boolean>;
 }
 
 export interface ServiceTypeMeta {
@@ -205,7 +205,7 @@ export const RevisionsMonitorView: React.FC<RevisionsMonitorViewProps> = ({
   revisions,
   currentUser,
   onRevisionsUpdated,
-  onSendChatwootAlert,
+  onSendWhatsAppAlert,
 }) => {
   // View mode: 'table' (Lista) by default as requested, or 'cards' (Bloquinhos)
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
@@ -213,7 +213,7 @@ export const RevisionsMonitorView: React.FC<RevisionsMonitorViewProps> = ({
   const [filterPlaca, setFilterPlaca] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [sendingChatwootId, setSendingChatwootId] = useState<string | null>(null);
+  const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null);
   const [sentSuccessId, setSentSuccessId] = useState<string | null>(null);
 
   // Active user for permissions
@@ -270,8 +270,8 @@ export const RevisionsMonitorView: React.FC<RevisionsMonitorViewProps> = ({
   const countProximos = revisions.filter(r => r.status === 'PROXIMO').length;
   const countEmDia = revisions.filter(r => r.status === 'EM_DIA').length;
 
-  const handleSendChatwootRevision = async (rev: RevisionPlan) => {
-    setSendingChatwootId(rev.id);
+  const handleSendWhatsAppRevision = async (rev: RevisionPlan) => {
+    setSendingWhatsAppId(rev.id);
     const vehicle = vehicles.find(v => v.placa === rev.placa);
     const motorista = vehicle?.motoristaNome ? `Olá, ${vehicle.motoristaNome}!` : 'Atenção, Operador de Frota!';
     const kmReal = vehicle?.odometroEstimado ?? vehicle?.odometroAtual ?? 0;
@@ -292,8 +292,8 @@ ${
 
 📍 Base Operacional Pará: Central de Apoio Fleet Telecom`;
 
-    const success = await onSendChatwootAlert(msg, rev.placa);
-    setSendingChatwootId(null);
+    const success = await onSendWhatsAppAlert(msg, rev.placa);
+    setSendingWhatsAppId(null);
     if (success) {
       setSentSuccessId(rev.id);
       setTimeout(() => setSentSuccessId(null), 4000);
@@ -910,10 +910,10 @@ ${
                             <span>Realizado</span>
                           </button>
 
-                          {/* Notificar Chatwoot */}
+                          {/* Lembrete no WhatsApp */}
                           <button
-                            onClick={() => handleSendChatwootRevision(rev)}
-                            disabled={sendingChatwootId === rev.id || sentSuccessId === rev.id}
+                            onClick={() => handleSendWhatsAppRevision(rev)}
+                            disabled={sendingWhatsAppId === rev.id || sentSuccessId === rev.id}
                             className={`text-[11px] px-2 py-1 rounded-md font-semibold flex items-center gap-1 transition-colors border shadow-xs whitespace-nowrap ${
                               sentSuccessId === rev.id
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
@@ -921,14 +921,14 @@ ${
                                 ? 'bg-red-600 hover:bg-red-700 text-white border-transparent'
                                 : 'bg-white hover:bg-sky-50 text-slate-700 border-slate-300'
                             }`}
-                            title="Disparar aviso ao condutor no WhatsApp via Chatwoot"
+                            title="Enviar lembrete pelo WhatsApp (WAHA)"
                           >
                             {sentSuccessId === rev.id ? (
                               <>
                                 <Check className="w-3 h-3 text-emerald-600" />
                                 <span>Notificado</span>
                               </>
-                            ) : sendingChatwootId === rev.id ? (
+                            ) : sendingWhatsAppId === rev.id ? (
                               <span>Enviando...</span>
                             ) : (
                               <>
@@ -1125,8 +1125,8 @@ ${
                   </button>
 
                   <button
-                    onClick={() => handleSendChatwootRevision(rev)}
-                    disabled={sendingChatwootId === rev.id || sentSuccessId === rev.id}
+                    onClick={() => handleSendWhatsAppRevision(rev)}
+                    disabled={sendingWhatsAppId === rev.id || sentSuccessId === rev.id}
                     className={`text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-colors border shadow-xs ${
                       sentSuccessId === rev.id
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
@@ -1140,7 +1140,7 @@ ${
                         <Check className="w-3.5 h-3.5 text-emerald-600" />
                         <span>Notificado</span>
                       </>
-                    ) : sendingChatwootId === rev.id ? (
+                    ) : sendingWhatsAppId === rev.id ? (
                       <span>Enviando...</span>
                     ) : (
                       <>

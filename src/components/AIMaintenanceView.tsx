@@ -57,7 +57,7 @@ interface AIMaintenanceViewProps {
   users?: SystemUser[];
   onServiceAdded: (service: ServiceLog) => void;
   onServiceUpdated?: (service: ServiceLog) => void;
-  onSendChatwootAlert: (message: string, placa: string) => Promise<boolean>;
+  onSendWhatsAppAlert: (message: string, placa: string) => Promise<boolean>;
 }
 
 // Permission checking helper with granular UserPermissions support
@@ -170,7 +170,7 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
   users = [],
   onServiceAdded,
   onServiceUpdated,
-  onSendChatwootAlert,
+  onSendWhatsAppAlert,
 }) => {
   const settings = storage.getSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -303,7 +303,7 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
   const [parsedData, setParsedData] = useState<any | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [chatwootSent, setChatwootSent] = useState(false);
+  const [whatsAppSent, setWhatsAppSent] = useState(false);
 
   // Supplier linking & suggestion state in AI Review
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
@@ -486,7 +486,7 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
     setIsLoadingAI(true);
     setAiError(null);
     setSaveSuccess(false);
-    setChatwootSent(false);
+    setWhatsAppSent(false);
 
     try {
       const response = await fetch('/api/ai/parse-service', {
@@ -677,8 +677,8 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
     setSaveSuccess(true);
   };
 
-  // Dispatch Chatwoot alert about this maintenance
-  const handleSendToChatwoot = async () => {
+  // Envia aviso desta manutenção pelo WhatsApp
+  const handleSendToWhatsApp = async () => {
     if (!parsedData) return;
     const msg = `🔧 *LANÇAMENTO DE MANUTENÇÃO - FLEET TELECOM PA*
 🚗 *Veículo:* ${parsedData.modelo} (Placa: ${parsedData.placa})
@@ -697,8 +697,8 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
 
 💡 *Parecer Técnico da IA (${providerUsed || 'AI'}):* ${parsedData.recomendacaoIA || 'Conforme o plano preventivo.'}`;
 
-    const sent = await onSendChatwootAlert(msg, parsedData.placa);
-    if (sent) setChatwootSent(true);
+    const sent = await onSendWhatsAppAlert(msg, parsedData.placa);
+    if (sent) setWhatsAppSent(true);
   };
 
   // Filtered services
@@ -1450,23 +1450,23 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={handleSendToChatwoot}
-                disabled={chatwootSent}
+                onClick={handleSendToWhatsApp}
+                disabled={whatsAppSent}
                 className={`text-xs px-3.5 py-2 rounded-lg font-semibold flex items-center gap-1.5 transition-colors border ${
-                  chatwootSent
+                  whatsAppSent
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
                     : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
                 }`}
               >
-                {chatwootSent ? (
+                {whatsAppSent ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Alerta Enviado ao Chatwoot</span>
+                    <span>Aviso enviado no WhatsApp</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-3.5 h-3.5 text-cyan-600" />
-                    <span>Disparar Alerta no Chatwoot</span>
+                    <span>Enviar aviso no WhatsApp</span>
                   </>
                 )}
               </button>
@@ -2519,7 +2519,7 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
           onServiceAdded(newService);
           setShowManualModal(false);
         }}
-        onSendChatwootAlert={onSendChatwootAlert}
+        onSendWhatsAppAlert={onSendWhatsAppAlert}
       />
 
       {/* User Management & Password Control Modal */}

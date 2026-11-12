@@ -12,13 +12,18 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 import fs from 'fs';
-import pg from 'pg';
-const { Pool } = pg;
+import { registerApi } from './server/api';
+import { seedIfEmpty, getVersions, DB_FILE } from './server/db';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json({ limit: '25mb' }));
+app.set('trust proxy', 1); // atrás do Traefik: IP real e HTTPS para o cookie
+app.use(express.json({ limit: '60mb' }));
+
+// Banco SQLite local + login: daqui para baixo toda rota /api exige sessão
+seedIfEmpty();
+registerApi(app);
 
 // ---------------------------------------------------------------------------
 // Proteção contra SSRF: várias rotas recebem uma URL do navegador e o servidor
@@ -98,53 +103,6 @@ function getSecret(secretName: string, envVarFallback?: string): string | undefi
   return envVarFallback ? process.env[envVarFallback] : process.env[secretName];
 }
 
-// Dedicated PostgreSQL 17 connection pool for Fleet Telecom
-let dbPool: pg.Pool | null = null;
-
-function initDbPool(): pg.Pool | null {
-  if (dbPool) return dbPool;
-
-  const dbPassword = getSecret('db_password', 'POSTGRES_PASSWORD') || process.env.DB_PASSWORD;
-  const rawDatabaseUrl = getSecret('database_url', 'DATABASE_URL');
-
-  let connectionString = rawDatabaseUrl;
-  if (!connectionString && (process.env.DB_HOST || process.env.POSTGRES_HOST)) {
-    const host = process.env.DB_HOST || process.env.POSTGRES_HOST || 'fleet_db';
-    const port = process.env.DB_PORT || '5432';
-    const user = process.env.DB_USER || process.env.POSTGRES_USER || 'fleet_user';
-    const dbName = process.env.DB_NAME || process.env.POSTGRES_DB || 'fleet_db';
-    if (dbPassword) {
-      connectionString = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(dbPassword)}@${host}:${port}/${dbName}`;
-    }
-  }
-
-  if (!connectionString) {
-    return null;
-  }
-
-  try {
-    dbPool = new Pool({
-      connectionString,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    });
-
-    dbPool.on('error', (err) => {
-      console.error('[PostgreSQL] Erro inesperado no pool de conexões:', err.message);
-    });
-
-    console.log('[PostgreSQL] Pool de conexões inicializado.');
-    return dbPool;
-  } catch (err: any) {
-    console.error('[PostgreSQL] Falha ao inicializar pool de conexões:', err.message);
-    return null;
-  }
-}
-
-// Non-blocking initialization
-initDbPool();
-
 // Healthcheck Liveness Probe (process up and running)
 app.get('/api/health', (req, res) => {
   res.status(200).json({
@@ -156,54 +114,18 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Healthcheck Readiness Probe (ready to receive traffic + DB state)
-app.get('/api/ready', async (req, res) => {
-  const pool = initDbPool();
-  if (!pool) {
+// Healthcheck Readiness Probe (pronto para receber tráfego + banco SQLite acessível)
+app.get('/api/ready', (req, res) => {
+  try {
+    const colecoes = Object.keys(getVersions()).length;
     return res.status(200).json({
       status: 'ready',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
-      database: {
-        configured: false,
-        message: 'PostgreSQL não configurado; operando com persistência de transição.',
-      },
+      database: { engine: 'SQLite', file: path.basename(DB_FILE), colecoes },
     });
-  }
-
-  const startTime = Date.now();
-  try {
-    const client = await pool.connect();
-    try {
-      await client.query('SELECT 1');
-      const latencyMs = Date.now() - startTime;
-      return res.status(200).json({
-        status: 'ready',
-        uptime: process.uptime(),
-        timestamp: new Date().toISOString(),
-        database: {
-          configured: true,
-          connected: true,
-          latencyMs,
-          engine: 'PostgreSQL 17 (fleet_db)',
-        },
-      });
-    } finally {
-      client.release();
-    }
   } catch (err: any) {
-    const latencyMs = Date.now() - startTime;
-    return res.status(503).json({
-      status: 'degraded',
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-      database: {
-        configured: true,
-        connected: false,
-        latencyMs,
-        error: err.message || 'Falha ao conectar no PostgreSQL',
-      },
-    });
+    return res.status(503).json({ status: 'degraded', database: { engine: 'SQLite', error: err.message } });
   }
 });
 
@@ -618,7 +540,7 @@ app.post('/api/gemini/parse-service', async (req, res) => {
   return app._router.handle(req, res, () => {});
 });
 
-// Endpoint: AI Fleet Health Advisor & Chatwoot Alert Generator with fallback
+// Endpoint: AI Fleet Health Advisor & WhatsApp Alert Generator with fallback
 app.post('/api/gemini/fleet-advisor', async (req, res) => {
   try {
     const { vehicles, pendingRevisions, licensingAlerts } = req.body;
@@ -632,7 +554,7 @@ Licenciamento DETRAN-PA e IPVA: ${JSON.stringify(licensingAlerts || [])}
 Gere um diagnóstico operacional executivo em JSON com:
 1. "resumoGeral": resumo executivo de 2 parágrafos sobre a saúde da frota e conformidade fiscal no Pará.
 2. "acoesPrioritarias": lista de 3 a 5 ações imediatas recomendadas para o gestor.
-3. "chatwootAlertas": array de mensagens prontas e formatadas para serem disparadas no Chatwoot para os motoristas e equipe de apoio com emojis e informações objetivas de placa, data limite e consequências (multa, apreensão pelo DETRAN-PA ou quebra mecânica).
+3. "whatsappAlertas": array de mensagens prontas e formatadas para serem enviadas pelo WhatsApp aos motoristas e equipe de apoio com emojis e informações objetivas de placa, data limite e consequências (multa, apreensão pelo DETRAN-PA ou quebra mecânica).
 4. "indiceConformidade": número de 0 a 100 representando a nota da frota.`;
 
     const geminiRes = await callGeminiWithFallback(prompt);
@@ -649,7 +571,7 @@ Gere um diagnóstico operacional executivo em JSON com:
           "Verificar quitação de licenciamento DETRAN-PA para placas com vencimento no ciclo atual.",
           "Realizar inspeção visual de pastilhas de freio e calibragem de pneus de toda a frota."
         ],
-        chatwootAlertas: [
+        whatsappAlertas: [
           "🚗 *ALERTA OPERACIONAL:* Agendamento de revisão preventiva recomendado para esta semana.",
           "📄 *DETRAN-PA:* Lembrete de verificação de licenciamento anual e IPVA SEFA-PA."
         ],
@@ -798,76 +720,122 @@ Retorne ESTRITAMENTE um objeto JSON:
   }
 });
 
-// Endpoint: Chatwoot alert dispatcher
-app.post('/api/chatwoot/send-alert', async (req, res) => {
-  try {
-    const {
-      chatwootUrl,
-      apiAccessToken,
-      accountId,
-      conversationId,
-      message,
-      targetChannel,
-    } = req.body;
+// ==========================================
+// WAHA (WhatsApp HTTP API): envio de lembretes
+// https://waha.devlike.pro — autenticação pelo cabeçalho X-Api-Key
+// ==========================================
 
-    if (!message) {
-      return res.status(400).json({ error: 'Mensagem de alerta não informada.' });
+/** Número ou grupo → chatId da WAHA ("5591988887777@c.us", "1203...@g.us"). */
+function toWahaChatId(raw: string): string | null {
+  const v = String(raw || '').trim();
+  if (!v) return null;
+  if (v.includes('@')) return v;
+  let digits = v.replace(/\D/g, '');
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`; // DDD + número sem o 55
+  if (digits.length < 12 || digits.length > 15) return null;
+  return `${digits}@c.us`;
+}
+
+function parseWahaDestinos(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw : String(raw || '').split(/[\n,;]+/);
+  return list.map((d) => String(d).trim()).filter(Boolean);
+}
+
+async function wahaFetch(baseUrl: string, apiKey: string, path: string, init: { method?: string; json?: unknown; timeoutMs?: number } = {}) {
+  const cleanUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
+  await assertSafeOutboundUrl(cleanUrl, 'WAHA_ALLOWED_HOSTS');
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (apiKey) headers['X-Api-Key'] = String(apiKey).trim();
+  if (init.json !== undefined) headers['Content-Type'] = 'application/json';
+  const url = cleanUrl + path;
+  const response = await fetch(url, {
+    method: init.method || 'GET',
+    headers,
+    body: init.json !== undefined ? JSON.stringify(init.json) : undefined,
+    signal: AbortSignal.timeout(init.timeoutMs ?? 15000),
+  });
+  const text = await response.text();
+  let data: any = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    /* resposta em texto */
+  }
+  return { response, data, url };
+}
+
+function wahaErrorMessage(status: number, data: any): string {
+  const detail = data && typeof data === 'object' ? data.message || data.error || JSON.stringify(data) : String(data || '');
+  return `WAHA HTTP ${status}${detail ? `: ${String(detail).slice(0, 300)}` : ''}`;
+}
+
+// Endpoint: envio de lembrete/alerta pelo WhatsApp (WAHA)
+app.post('/api/waha/send-text', async (req, res) => {
+  try {
+    const { baseUrl, apiKey, session, destinos, message } = req.body || {};
+
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ success: false, error: 'Mensagem do lembrete não informada.' });
     }
 
-    // If actual Chatwoot credentials provided, attempt real API dispatch
-    if (chatwootUrl && apiAccessToken && accountId && conversationId) {
-      const cleanUrl = chatwootUrl.replace(/\/+$/, '');
-      await assertSafeOutboundUrl(cleanUrl, "CHATWOOT_ALLOWED_HOSTS");
-      const endpoint = `${cleanUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`;
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api_access_token': apiAccessToken,
-        },
-        body: JSON.stringify({
-          content: message,
-          message_type: 'outgoing',
-          private: false,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        return res.json({
-          success: false,
-          sentToLiveChatwoot: false,
-          error: `Chatwoot HTTP ${response.status}: ${errorText}`,
-          fallbackSimulated: true,
-          timestamp: new Date().toISOString(),
-          message,
-        });
-      }
-
-      const chatwootData = await response.json();
+    const targets = parseWahaDestinos(destinos);
+    if (!baseUrl || targets.length === 0) {
+      // Sem WAHA configurada: o lembrete fica só registrado no histórico
       return res.json({
         success: true,
-        sentToLiveChatwoot: true,
-        data: chatwootData,
+        sentToWhatsApp: false,
+        simulated: true,
+        info: 'Lembrete registrado. Configure a WAHA (URL, sessão e destinatários) em Configurações para enviar pelo WhatsApp.',
         timestamp: new Date().toISOString(),
         message,
       });
     }
 
-    // Fallback simulation mode for testing when tokens are not yet connected
+    const sessionName = String(session || 'default').trim() || 'default';
+    const results: { destino: string; chatId?: string; ok: boolean; error?: string; messageId?: string }[] = [];
+
+    for (const destino of targets) {
+      const chatId = toWahaChatId(destino);
+      if (!chatId) {
+        results.push({ destino, ok: false, error: 'Número inválido (use DDD + número ou o ID do grupo).' });
+        continue;
+      }
+      try {
+        const { response, data } = await wahaFetch(baseUrl, apiKey, '/api/sendText', {
+          method: 'POST',
+          json: { session: sessionName, chatId, text: String(message) },
+        });
+        if (!response.ok) {
+          results.push({ destino, chatId, ok: false, error: wahaErrorMessage(response.status, data) });
+        } else {
+          const id = data?.id;
+          results.push({ destino, chatId, ok: true, messageId: typeof id === 'string' ? id : id?._serialized });
+        }
+      } catch (err: any) {
+        if (err instanceof UnsafeUrlError) throw err;
+        results.push({ destino, chatId, ok: false, error: err?.message || String(err) });
+      }
+    }
+
+    const enviados = results.filter((r) => r.ok).length;
     return res.json({
-      success: true,
-      sentToLiveChatwoot: false,
-      simulated: true,
-      info: 'Alerta registrado no fluxo de comunicação (configure o Token do Chatwoot no menu de Configurações para envio em tempo real ao canal ao vivo).',
+      success: enviados > 0,
+      sentToWhatsApp: enviados > 0,
+      enviados,
+      falhas: results.length - enviados,
+      results,
+      error: enviados === 0 ? results.map((r) => `${r.destino}: ${r.error}`).join(' | ') : undefined,
       timestamp: new Date().toISOString(),
       message,
     });
   } catch (error: any) {
-    console.error('Erro ao enviar alerta Chatwoot:', error);
+    if (error instanceof UnsafeUrlError) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+    console.error('Erro ao enviar lembrete pela WAHA:', error);
     return res.status(500).json({
-      error: 'Erro no envio do alerta para o Chatwoot',
+      success: false,
+      error: 'Erro no envio do lembrete pelo WhatsApp (WAHA)',
       details: error?.message || String(error),
     });
   }
@@ -1903,71 +1871,63 @@ app.post('/api/fipe/sync-fleet', async (req, res) => {
   }
 });
 
-// Endpoint: Chatwoot Connection Tester
-app.post('/api/chatwoot/test-connection', async (req, res) => {
+// Endpoint: teste de conexão com a WAHA (status da sessão do WhatsApp)
+app.post('/api/waha/test-connection', async (req, res) => {
   const startTime = Date.now();
   try {
-    const { baseUrl, apiAccessToken, accountId } = req.body;
-
-    if (!baseUrl || !apiAccessToken) {
+    const { baseUrl, apiKey, session } = req.body || {};
+    if (!baseUrl) {
       return res.status(400).json({
         success: false,
         statusCode: 400,
         latencyMs: 0,
-        message: 'URL base e Token de Acesso do Chatwoot são obrigatórios.',
+        message: 'Informe a URL do servidor WAHA.',
       });
     }
 
-    const cleanUrl = baseUrl.replace(/\/+$/, '');
-    await assertSafeOutboundUrl(cleanUrl, "CHATWOOT_ALLOWED_HOSTS");
-    const endpoint = accountId
-      ? `${cleanUrl}/api/v1/accounts/${accountId}`
-      : `${cleanUrl}/api/v1/profile`;
-
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'api_access_token': apiAccessToken.trim(),
-      },
-      signal: AbortSignal.timeout(8000),
+    const sessionName = String(session || 'default').trim() || 'default';
+    const { response, data, url } = await wahaFetch(baseUrl, apiKey, `/api/sessions/${encodeURIComponent(sessionName)}`, {
+      timeoutMs: 8000,
     });
-
     const latencyMs = Date.now() - startTime;
-    const contentType = response.headers.get('content-type') || '';
-    let responseData;
-    if (contentType.includes('application/json')) {
-      responseData = await response.json();
-    } else {
-      responseData = await response.text();
-    }
 
-    if (response.ok) {
-      return res.json({
-        success: true,
-        statusCode: response.status,
-        latencyMs,
-        urlCalled: endpoint,
-        message: 'Conexão com o Chatwoot validada com sucesso!',
-        data: responseData,
-      });
-    } else {
+    if (!response.ok) {
+      const hint =
+        response.status === 401 ? ' (confira a API key)' : response.status === 404 ? ` (sessão "${sessionName}" não existe)` : '';
       return res.json({
         success: false,
         statusCode: response.status,
         latencyMs,
-        urlCalled: endpoint,
-        message: `Chatwoot respondeu com HTTP ${response.status}`,
-        data: responseData,
+        urlCalled: url,
+        message: `${wahaErrorMessage(response.status, data)}${hint}`,
+        data,
       });
     }
+
+    const status = data?.status || 'DESCONHECIDO';
+    const numero = data?.me?.id ? String(data.me.id).replace(/@.*/, '') : '';
+    const working = status === 'WORKING';
+    return res.json({
+      success: working,
+      statusCode: response.status,
+      latencyMs,
+      urlCalled: url,
+      sessionStatus: status,
+      message: working
+        ? `Sessão "${sessionName}" conectada ao WhatsApp${numero ? ` (${numero})` : ''}.`
+        : status === 'SCAN_QR_CODE'
+          ? `Sessão "${sessionName}" aguardando leitura do QR code na WAHA.`
+          : `Sessão "${sessionName}" está ${status}. Inicie a sessão na WAHA.`,
+      data,
+    });
   } catch (err: any) {
     const latencyMs = Date.now() - startTime;
     return res.json({
       success: false,
       statusCode: 0,
       latencyMs,
-      message: `Falha ao alcançar o servidor Chatwoot: ${err.message}`,
+      message:
+        err instanceof UnsafeUrlError ? err.message : `Falha ao alcançar o servidor WAHA: ${err?.message || err}`,
     });
   }
 });
@@ -2188,8 +2148,8 @@ app.post('/api/alerts/process-auto-alerts', (req, res) => {
             nivel: 'CRITICO',
             titulo,
             mensagem: `[ALERTA DE REVISÃO] Veículo ${rev.placa}: O plano de revisão ${rev.titulo} (${rev.item}) está VENCIDO! Quilometragem excedida em ${Math.abs(rev.kmRestantes)} km. Agende manutenção imediata.`,
-            enviadoChatwoot: false,
-            chatwootStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
         }
@@ -2207,8 +2167,8 @@ app.post('/api/alerts/process-auto-alerts', (req, res) => {
             nivel: 'AVISO',
             titulo,
             mensagem: `[AVISO DE REVISÃO] Veículo ${rev.placa}: O plano de revisão ${rev.titulo} (${rev.item}) vence em ${rev.kmRestantes} km (Data estimada: ${rev.proximaData}).`,
-            enviadoChatwoot: false,
-            chatwootStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
         }
@@ -2233,8 +2193,8 @@ app.post('/api/alerts/process-auto-alerts', (req, res) => {
             nivel: 'CRITICO',
             titulo,
             mensagem: `[DETRAN-PA] O licenciamento do veículo ${lic.placa} (Exercício ${lic.exercicio}) está VENCIDO desde ${lic.dataLimiteLicenciamento}. Evite apreensão e multas emitindo o DAE.`,
-            enviadoChatwoot: false,
-            chatwootStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
         }
@@ -2252,8 +2212,8 @@ app.post('/api/alerts/process-auto-alerts', (req, res) => {
             nivel: 'AVISO',
             titulo,
             mensagem: `[DETRAN-PA] Atenção: Licenciamento do veículo ${lic.placa} (Exercício ${lic.exercicio}) vence em ${lic.diasRestantes} dia(s) (Prazo: ${lic.dataLimiteLicenciamento}).`,
-            enviadoChatwoot: false,
-            chatwootStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
         }
@@ -2293,8 +2253,8 @@ app.post('/api/alerts/process-auto-alerts', (req, res) => {
             nivel: 'CRITICO',
             titulo,
             mensagem: `[RASTREADOR SEM SINAL] Veículo ${v.placa}: Sem comunicação com a Selsyn há ${hoursOffline > 0 ? `${hoursOffline}h` : 'mais de 24h'} (Última transmissão: ${v.ultimaComunicacao ? new Date(v.ultimaComunicacao).toLocaleString('pt-BR') : 'Sem registro'}). Verificar antena/alimentação.`,
-            enviadoChatwoot: false,
-            chatwootStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
+            enviadoWhatsApp: false,
+            whatsappStatus: dryRun ? 'TESTE_SIMULADO' : 'PRONTO_PARA_ENVIO',
             resolvido: false,
           });
         }
@@ -2305,172 +2265,16 @@ app.post('/api/alerts/process-auto-alerts', (req, res) => {
       success: true,
       novosAlertasGerados: generatedAlerts.length,
       duplicidadesEvitadas: duplicatesSkipped,
-      chatwootDryRun: dryRun,
+      whatsappDryRun: dryRun,
       message: dryRun
         ? `Alertas processados no backend com sucesso (${generatedAlerts.length} novos gerados, ${duplicatesSkipped} duplicatas evitadas). Disparos reais não realizados durante os testes.`
-        : `Alertas processados e preparados para envio via Chatwoot.`,
+        : `Alertas processados e preparados para envio pelo WhatsApp.`,
       alertas: generatedAlerts,
     });
   } catch (err: any) {
     return res.status(500).json({
       success: false,
       error: `Erro ao processar alertas automáticos: ${err.message}`,
-    });
-  }
-});
-
-// ==========================================
-// SUPABASE POSTGRESQL & HEALTH INTEGRATION
-// ==========================================
-app.get('/api/supabase/status', (req, res) => {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
-  const key = (process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
-
-  const isConfigured = Boolean(
-    url &&
-    url.startsWith('https://') &&
-    url.includes('.supabase.co') &&
-    key &&
-    key.length > 20
-  );
-
-  return res.json({
-    isConfigured,
-    url: url ? `${url.substring(0, 16)}...` : '',
-    hasKey: Boolean(key),
-    environment: process.env.NODE_ENV || 'development',
-    storageBucket: 'documentos-frota',
-    authPhasePending: true,
-  });
-});
-
-app.post('/api/supabase/test-connection', async (req, res) => {
-  const startTime = Date.now();
-  try {
-    const { url, publishableKey } = req.body;
-    const targetUrl = (url || process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
-    const targetKey = (publishableKey || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
-
-    if (!targetUrl || !targetKey) {
-      return res.status(400).json({
-        connectionOk: false,
-        latencyMs: 0,
-        statusCode: 400,
-        message: 'SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY / VITE_SUPABASE_ANON_KEY não informados. Configure via Secrets do AI Studio.',
-        rlsEnforced: true,
-        anonymousBlocked: true,
-      });
-    }
-
-    // Security check: reject administrative keys in API test
-    if (targetKey.toLowerCase().includes('service_role')) {
-      return res.status(400).json({
-        connectionOk: false,
-        latencyMs: 0,
-        statusCode: 400,
-        message: 'Chave service_role detectada. Por segurança, use apenas a Anon / Publishable Key.',
-        rlsEnforced: true,
-        anonymousBlocked: true,
-      });
-    }
-
-    const cleanUrl = targetUrl.replace(/\/+$/, '');
-    await assertSafeOutboundUrl(cleanUrl, "SUPABASE_ALLOWED_HOSTS", ["supabase.co"]);
-
-    // 1. Ping Supabase REST endpoint
-    const restPing = await fetch(`${cleanUrl}/rest/v1/`, {
-      method: 'GET',
-      headers: {
-        'apikey': targetKey,
-        'Authorization': `Bearer ${targetKey}`,
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    const latencyMs = Date.now() - startTime;
-
-    if (!restPing.ok && restPing.status === 401) {
-      return res.json({
-        connectionOk: false,
-        latencyMs,
-        statusCode: 401,
-        message: 'O servidor Supabase foi alcançado, mas a Publishable / Anon Key foi rejeitada (HTTP 401). Verifique a chave no painel do Supabase.',
-        rlsEnforced: true,
-        anonymousBlocked: true,
-      });
-    }
-
-    // 2. Check table 'veiculos' under RLS
-    let tableExists = false;
-    let rlsProtectsAnon = true;
-    let tableMsg = '';
-
-    try {
-      const tableCheck = await fetch(`${cleanUrl}/rest/v1/veiculos?select=id&limit=1`, {
-        method: 'GET',
-        headers: {
-          'apikey': targetKey,
-          'Authorization': `Bearer ${targetKey}`,
-        },
-        signal: AbortSignal.timeout(6000),
-      });
-
-      if (tableCheck.ok) {
-        tableExists = true;
-        const rows = await tableCheck.json();
-        // Since user is anonymous, RLS returns empty array []
-        rlsProtectsAnon = Array.isArray(rows) && rows.length === 0;
-        tableMsg = 'Tabelas encontradas e RLS protegendo o acesso anônimo com sucesso.';
-      } else {
-        const errJson = await tableCheck.json().catch(() => ({}));
-        if (errJson?.code === '42P01' || String(errJson?.message).includes('relation') || tableCheck.status === 404) {
-          tableExists = false;
-          tableMsg = 'Conexão Supabase OK! Tabelas ainda não criadas. Execute a migration SQL no Supabase SQL Editor.';
-        } else {
-          tableMsg = `Status da tabela: HTTP ${tableCheck.status}`;
-        }
-      }
-    } catch (e: any) {
-      tableMsg = `Aviso na checagem de tabelas: ${e.message}`;
-    }
-
-    return res.json({
-      connectionOk: true,
-      latencyMs,
-      statusCode: restPing.status,
-      message: tableExists
-        ? 'Conectado ao Supabase com sucesso! Tabelas operacionais ativas e RLS configurado.'
-        : tableMsg,
-      rlsEnforced: true,
-      anonymousBlocked: rlsProtectsAnon,
-      tablesStatus: {
-        veiculos: tableExists,
-        manutencoes: tableExists,
-        pecas_manutencao: tableExists,
-        servicos_executados: tableExists,
-        planos_revisao: tableExists,
-        licenciamento_ipva: tableExists,
-        usuarios_motoristas: tableExists,
-        alertas_telemetria: tableExists,
-        historico_chatwoot: tableExists,
-        logs_integracao: tableExists,
-        documentos_anexos: tableExists,
-      },
-      storageStatus: {
-        bucketName: 'documentos-frota',
-        exists: true,
-        isPrivate: true,
-      },
-    });
-  } catch (err: any) {
-    const latencyMs = Date.now() - startTime;
-    return res.status(500).json({
-      connectionOk: false,
-      latencyMs,
-      statusCode: 0,
-      message: `Erro ao conectar com o Supabase: ${err.message || String(err)}`,
-      rlsEnforced: true,
-      anonymousBlocked: true,
     });
   }
 });

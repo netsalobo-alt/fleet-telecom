@@ -8,15 +8,24 @@ import { ReportsView } from './components/ReportsView';
 import { RevisionsMonitorView } from './components/RevisionsMonitorView';
 import { LicenciamentoPAView } from './components/LicenciamentoPAView';
 import { TrackingMapView } from './components/TrackingMapView';
-import { AlertsChatwootView } from './components/AlertsChatwootView';
+import { AlertsWhatsAppView } from './components/AlertsWhatsAppView';
 import { ConfigView } from './components/ConfigView';
 import { SuppliersView } from './components/SuppliersView';
 import { FleetCalendarView } from './components/FleetCalendarView';
+import { DriversView } from './components/DriversView';
+import { sync } from './services/sync';
+import { LocalImportBanner } from './components/LocalImportBanner';
+import { canAccessTab } from './services/permissions';
 import { storage } from './services/storage';
-import { Vehicle, ServiceLog, RevisionPlan, LicenciamentoPA, TelemetryAlert, SystemUser, SystemSettings, ChatwootLog, Supplier } from './types';
+import { Vehicle, ServiceLog, RevisionPlan, LicenciamentoPA, TelemetryAlert, SystemUser, SystemSettings, AlertDispatchLog, Supplier, Driver, USER_ROLE_SHORT } from './types';
 import { CheckCircle2, AlertTriangle, Info, Menu, Shield, User } from 'lucide-react';
 
-export default function App() {
+interface AppProps {
+  /** Sai da conta (encerra a sessão no servidor). */
+  onLogout: () => void;
+}
+
+export default function App({ onLogout }: AppProps) {
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -30,9 +39,10 @@ export default function App() {
   const [licensingList, setLicensingList] = useState<LicenciamentoPA[]>(() => storage.getLicensing());
   const [alerts, setAlerts] = useState<TelemetryAlert[]>(() => storage.getAlerts());
   const [users, setUsers] = useState<SystemUser[]>(() => storage.getUsers());
-  const [currentUser, setCurrentUser] = useState<SystemUser>(() => storage.getActiveUser());
+  const [currentUser, setCurrentUser] = useState<SystemUser | null>(() => storage.getSessionUser());
+  const [drivers, setDrivers] = useState<Driver[]>(() => storage.getDrivers());
   const [settings, setSettings] = useState<SystemSettings>(() => storage.getSettings());
-  const [chatwootLogs, setChatwootLogs] = useState<ChatwootLog[]>(() => storage.getChatwootLogs());
+  const [dispatchLogs, setAlertDispatchLogs] = useState<AlertDispatchLog[]>(() => storage.getAlertDispatchLogs());
 
   // Global Toast State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'warning' | 'info' } | null>(null);
@@ -50,55 +60,100 @@ export default function App() {
   const refreshLicensing = () => setLicensingList(storage.getLicensing());
   const refreshAlerts = () => setAlerts(storage.getAlerts());
   const refreshUsers = () => setUsers(storage.getUsers());
+  const refreshDrivers = () => setDrivers(storage.getDrivers());
+
+  const handleLogout = () => {
+    setShowGlobalUserModal(false);
+    setMobileMenuOpen(false);
+    onLogout();
+  };
+
+  // Outra pessoa alterou dados (ou uma gravação foi recusada): recarrega tudo da memória
+  const [syncStatus, setSyncStatus] = useState(sync.getStatus());
+  useEffect(() => {
+    const onChanged = () => {
+      setVehicles(storage.getVehicles());
+      setServices(storage.getServices());
+      setSuppliers(storage.getSuppliers());
+      setRevisions(storage.getRevisions());
+      setLicensingList(storage.getLicensing());
+      setAlerts(storage.getAlerts());
+      setUsers(storage.getUsers());
+      setDrivers(storage.getDrivers());
+      setSettings(storage.getSettings());
+      setAlertDispatchLogs(storage.getAlertDispatchLogs());
+      setCurrentUser(storage.getSessionUser());
+    };
+    const onStatus = (e: Event) => setSyncStatus((e as CustomEvent).detail.status);
+    const onDenied = (e: Event) => showToast((e as CustomEvent).detail.message, 'warning');
+    window.addEventListener('fleet:data-changed', onChanged);
+    window.addEventListener('fleet:sync-status', onStatus);
+    window.addEventListener('fleet:sync-denied', onDenied);
+    return () => {
+      window.removeEventListener('fleet:data-changed', onChanged);
+      window.removeEventListener('fleet:sync-status', onStatus);
+      window.removeEventListener('fleet:sync-denied', onDenied);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Perfil desativado ou excluído por um gestor: encerra a sessão
+  useEffect(() => {
+    if (!currentUser) onLogout();
+  }, [currentUser, onLogout]);
   const refreshSettings = (newSettings?: SystemSettings) => {
     if (newSettings) setSettings(newSettings);
     else setSettings(storage.getSettings());
     refreshLicensing();
   };
 
-  // Global Chatwoot Alert Dispatcher
-  const handleSendChatwootAlert = async (message: string, placa: string, alertaId?: string): Promise<boolean> => {
-    try {
-      const response = await fetch('/api/chatwoot/send-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chatwootUrl: settings.chatwoot.baseUrl,
-          apiAccessToken: settings.chatwoot.apiAccessToken,
-          accountId: settings.chatwoot.accountId,
-          conversationId: settings.chatwoot.conversationId,
-          message,
-          targetChannel: 'whatsapp',
-        }),
-      });
-
-      const result = await response.json();
-
-      const newLog: ChatwootLog = {
+  // Envio global de lembretes/alertas pelo WhatsApp (WAHA)
+  const handleSendWhatsAppAlert = async (message: string, placa: string, alertaId?: string): Promise<boolean> => {
+    const log = (status: AlertDispatchLog['status'], detalhe: string) => {
+      storage.addAlertDispatchLog({
         id: 'log-' + Date.now(),
         timestamp: new Date().toISOString(),
         alertaId,
         placa,
-        tipo: 'NOTIFICAÇÃO OPERACIONAL',
+        tipo: 'LEMBRETE WHATSAPP',
         mensagem: message,
-        status: result.sentToLiveChatwoot ? 'ENVIADO' : 'SIMULADO',
-        detalhe: result.sentToLiveChatwoot
-          ? 'Entregue à API Chatwoot'
-          : 'Simulado localmente (configure o token nas Configurações)',
-      };
+        status,
+        detalhe,
+      });
+      setAlertDispatchLogs(storage.getAlertDispatchLogs());
+    };
 
-      storage.addChatwootLog(newLog);
-      setChatwootLogs(storage.getChatwootLogs());
+    try {
+      const response = await fetch('/api/waha/send-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseUrl: settings.waha.baseUrl,
+          apiKey: settings.waha.apiKey,
+          session: settings.waha.session,
+          destinos: settings.waha.destinos,
+          message,
+        }),
+      });
+      const result = await response.json();
 
-      if (result.sentToLiveChatwoot) {
-        showToast(`Mensagem enviada com sucesso para o Chatwoot (${placa})!`, 'success');
-      } else {
-        showToast(`Alerta registrado no fluxo do Chatwoot (${placa})!`, 'info');
+      if (result.sentToWhatsApp) {
+        const falhas = result.falhas ? ` · ${result.falhas} falha(s)` : '';
+        log('ENVIADO', `WhatsApp (WAHA): ${result.enviados} destinatário(s)${falhas}`);
+        showToast(`Lembrete enviado pelo WhatsApp (${placa})${falhas}.`, result.falhas ? 'warning' : 'success');
+        return true;
       }
-
-      return true;
+      if (result.simulated) {
+        log('SIMULADO', 'Só registrado: configure a WAHA em Configurações');
+        showToast(`Lembrete registrado (${placa}). Configure a WAHA para enviar pelo WhatsApp.`, 'info');
+        return true;
+      }
+      log('FALHA', result.error || 'A WAHA recusou o envio');
+      showToast(`Falha ao enviar pelo WhatsApp: ${result.error || 'erro desconhecido'}`, 'warning');
+      return false;
     } catch (e: any) {
-      console.error('Falha no envio Chatwoot:', e);
+      console.error('Falha no envio pela WAHA:', e);
+      log('FALHA', e?.message || 'Servidor indisponível');
       showToast('Erro ao comunicar com o servidor de alertas.', 'warning');
       return false;
     }
@@ -236,6 +291,11 @@ export default function App() {
     settings.tracking.clienteId,
   ]);
 
+  if (!currentUser) return null;
+
+  // Tela fora do perfil de acesso (ex.: link antigo) volta para a visão geral
+  const tabAllowed = canAccessTab(currentUser, currentTab);
+
   return (
     <div className="min-h-screen bg-surface-100 text-ink font-sans flex flex-col md:flex-row">
       {/* Aviso flutuante (vidro fosco, estilo Apple) */}
@@ -262,13 +322,14 @@ export default function App() {
         alerts={alerts}
         revisions={revisions}
         currentUser={currentUser}
-        onSwitchUser={(user) => {
-          setCurrentUser(user);
-          storage.setActiveUser(user);
-        }}
-        onOpenUserManagement={() => setShowGlobalUserModal(true)}
-        users={users}
-        chatwootConnected={Boolean(settings.chatwoot.apiAccessToken)}
+        onLogout={handleLogout}
+        syncStatus={syncStatus}
+        onOpenUserManagement={
+          currentUser.cargo === 'GESTOR' || currentUser.permissoes?.podeGerenciarUsuarios
+            ? () => setShowGlobalUserModal(true)
+            : undefined
+        }
+        whatsappConnected={Boolean(settings.waha?.baseUrl && settings.waha?.destinos)}
         trackingConnected={Boolean(
           settings.tracking.operadorKey || settings.tracking.xApiKey || settings.tracking.token
         )}
@@ -300,7 +361,7 @@ export default function App() {
           </span>
           <button
             type="button"
-            onClick={() => setShowGlobalUserModal(true)}
+            onClick={() => setMobileMenuOpen(true)}
             className="w-10 h-10 -mr-2 rounded-full flex items-center justify-center text-navy-deep hover:bg-surface-200"
             aria-label={`Conta de ${currentUser.nome}`}
           >
@@ -312,23 +373,63 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
-        {currentTab === 'dashboard' && (
+        {currentUser.cargo === 'GESTOR' && (
+          <LocalImportBanner
+            onImported={() => {
+              window.dispatchEvent(new CustomEvent('fleet:data-changed'));
+              showToast('Dados importados para o servidor.', 'success');
+            }}
+          />
+        )}
+
+        {!tabAllowed && (
+          <div className="bg-white rounded-2xl border border-line p-8 text-center">
+            <h1 className="text-[20px] font-bold text-navy-deep">Sem acesso a esta tela</h1>
+            <p className="text-[14px] text-ink-muted mt-1">
+              O seu perfil ({USER_ROLE_SHORT[currentUser.cargo]}) não inclui este módulo. Fale com um gestor.
+            </p>
+            <button
+              type="button"
+              onClick={() => setCurrentTab('dashboard')}
+              className="mt-4 h-10 px-4 rounded-[10px] bg-brand-navy text-white text-[14px] font-semibold"
+            >
+              Ir para a visão geral
+            </button>
+          </div>
+        )}
+
+        {tabAllowed && currentTab === 'drivers' && (
+          <DriversView
+            drivers={drivers}
+            vehicles={vehicles}
+            users={users}
+            canManage={currentUser.cargo === 'GESTOR' || Boolean(currentUser.permissoes?.podeGerenciarVeiculos)}
+            onChanged={() => {
+              refreshDrivers();
+              refreshVehicles();
+            }}
+            showToast={showToast}
+          />
+        )}
+
+        {tabAllowed && currentTab === 'dashboard' && (
           <DashboardView
             vehicles={vehicles}
             services={services}
             revisions={revisions}
             licensingList={licensingList}
             alerts={alerts}
-            setCurrentTab={setCurrentTab}
-            onSendChatwootAlert={handleSendChatwootAlert}
+            setCurrentTab={(tab) => setCurrentTab(canAccessTab(currentUser, tab) ? tab : 'dashboard')}
+            canLaunch={canAccessTab(currentUser, 'maintenance')}
+            onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
 
-        {currentTab === 'vehicles' && (
+        {tabAllowed && currentTab === 'vehicles' && (
           <VehiclesView
             vehicles={vehicles}
             services={services}
-            users={users}
+            drivers={drivers}
             onVehiclesUpdated={refreshVehicles}
             onServiceAdded={handleServiceAdded}
             onNavigateToAI={(placa) => {
@@ -337,11 +438,11 @@ export default function App() {
             onNavigateToTracking={(veiculoId) => {
               setCurrentTab('tracking');
             }}
-            onSendChatwootAlert={handleSendChatwootAlert}
+            onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
 
-        {currentTab === 'suppliers' && (
+        {tabAllowed && currentTab === 'suppliers' && (
           <SuppliersView
             suppliers={suppliers}
             services={services}
@@ -354,7 +455,7 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'maintenance' && (
+        {tabAllowed && currentTab === 'maintenance' && (
           <AIMaintenanceView
             vehicles={vehicles}
             services={services}
@@ -373,11 +474,11 @@ export default function App() {
               refreshRevisions();
               showToast(`Lançamento do veículo ${updated.placa} atualizado com sucesso!`, 'success');
             }}
-            onSendChatwootAlert={handleSendChatwootAlert}
+            onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
 
-        {currentTab === 'reports' && (
+        {tabAllowed && currentTab === 'reports' && (
           <ReportsView
             vehicles={vehicles}
             services={services}
@@ -385,17 +486,17 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'revisions' && (
+        {tabAllowed && currentTab === 'revisions' && (
           <RevisionsMonitorView
             vehicles={vehicles}
             revisions={revisions}
             currentUser={currentUser}
             onRevisionsUpdated={refreshRevisions}
-            onSendChatwootAlert={handleSendChatwootAlert}
+            onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
 
-        {currentTab === 'calendar' && (
+        {tabAllowed && currentTab === 'calendar' && (
           <FleetCalendarView
             vehicles={vehicles}
             revisions={revisions}
@@ -404,41 +505,41 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'detran' && (
+        {tabAllowed && currentTab === 'detran' && (
           <LicenciamentoPAView
             vehicles={vehicles}
             licensingList={licensingList}
             onLicensingUpdated={refreshLicensing}
-            onSendChatwootAlert={handleSendChatwootAlert}
+            onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
 
-        {currentTab === 'tracking' && (
+        {tabAllowed && currentTab === 'tracking' && (
           <TrackingMapView
             vehicles={vehicles}
             onVehiclesUpdated={refreshVehicles}
-            onSendChatwootAlert={handleSendChatwootAlert}
+            onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
 
-        {currentTab === 'alerts' && (
-          <AlertsChatwootView
+        {tabAllowed && currentTab === 'alerts' && (
+          <AlertsWhatsAppView
             alerts={alerts}
             vehicles={vehicles}
             settings={settings}
-            chatwootLogs={chatwootLogs}
+            dispatchLogs={dispatchLogs}
             onAlertsUpdated={refreshAlerts}
-            onSendChatwootAlert={handleSendChatwootAlert}
+            onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
 
-        {currentTab === 'config' && (
+        {tabAllowed && currentTab === 'config' && (
           <ConfigView
             settings={settings}
             users={users}
             onSettingsUpdated={refreshSettings}
             onUsersUpdated={refreshUsers}
-            onSendChatwootAlert={handleSendChatwootAlert}
+            onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
       </main>
@@ -448,13 +549,13 @@ export default function App() {
           <span>
             <span className="font-semibold text-navy-deep">Fleet Telecom</span> · gestão de frota por Norte Telecom
           </span>
+          {import.meta.env.DEV && currentUser.cargo === 'GESTOR' && (
           <button
             type="button"
             onClick={() => {
               if (confirm('Restaurar os dados de demonstração? Os dados atuais da frota serão substituídos.')) {
                 storage.resetAllToDefaults();
                 storage.loadDemoPreset();
-                setCurrentUser(storage.getActiveUser());
                 refreshVehicles();
                 refreshServices();
                 refreshSuppliers();
@@ -470,6 +571,7 @@ export default function App() {
           >
             Restaurar dados de demonstração
           </button>
+          )}
         </div>
       </footer>
 
@@ -480,12 +582,13 @@ export default function App() {
         currentUser={currentUser}
         onUserChanged={(updatedUser) => {
           setCurrentUser(updatedUser);
-          storage.setActiveUser(updatedUser);
           refreshUsers();
         }}
         onUsersListUpdated={() => {
           refreshUsers();
-          setCurrentUser(storage.getActiveUser());
+          refreshDrivers();
+          // Se o próprio usuário foi desativado ou excluído, a sessão termina
+          setCurrentUser(storage.getSessionUser());
         }}
       />
     </div>

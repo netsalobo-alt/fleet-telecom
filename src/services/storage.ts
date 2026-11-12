@@ -7,9 +7,10 @@ import {
   TelemetryAlert,
   SystemUser,
   SystemSettings,
-  ChatwootLog,
+  AlertDispatchLog,
   IntegrationLog,
   Supplier,
+  Driver,
   SupplierCategory,
 } from '../types';
 import { calcularLicenciamentoPA, getDefaultDetranCalendar } from '../utils/detranPA';
@@ -25,12 +26,13 @@ const STORAGE_KEYS = {
   ALERTS: `${STORAGE_VERSION}_alerts`,
   USERS: `${STORAGE_VERSION}_users`,
   SETTINGS: `${STORAGE_VERSION}_settings`,
-  CHATWOOT_LOGS: `${STORAGE_VERSION}_chatwoot_logs`,
+  DISPATCH_LOGS: `${STORAGE_VERSION}_whatsapp_logs`,
   INTEGRATION_LOGS: `${STORAGE_VERSION}_integration_logs`,
   ACTIVE_USER: `${STORAGE_VERSION}_active_user`,
+  DRIVERS: `${STORAGE_VERSION}_drivers`,
 };
 
-// Initial clean settings configured for real Selsyn API, Chatwoot, and OpenAI
+// Initial clean settings configured for real Selsyn API, WAHA (WhatsApp), and OpenAI
 export const INITIAL_SETTINGS: SystemSettings = {
   tracking: {
     baseUrl: 'https://api.appselsyn.com.br/',
@@ -41,12 +43,11 @@ export const INITIAL_SETTINGS: SystemSettings = {
     autoSyncInterval: 30,
     modoSimulacao: false,
   },
-  chatwoot: {
-    baseUrl: 'https://chatwoot.suaempresa.com.br',
-    apiAccessToken: '',
-    accountId: '1',
-    inboxId: '1',
-    conversationId: '',
+  waha: {
+    baseUrl: '',
+    apiKey: '',
+    session: 'default',
+    destinos: '',
     autoAlertsEnabled: true,
     notifyOnMaintenance: true,
     notifyOnDetran: true,
@@ -64,95 +65,11 @@ export const INITIAL_SETTINGS: SystemSettings = {
     model: 'gpt-4o',
     preferredProvider: 'openai',
   },
-  supabase: {
-    url: '',
-    publishableKey: '',
-    storageBucket: 'documentos-frota',
-    environment: 'development',
-    autoSyncEnabled: false,
-  },
 };
 
-import { UserPermissions, UserRole } from '../types';
-
-export function getDefaultPermissionsByRole(role: UserRole): UserPermissions {
-  if (role === 'GESTOR') {
-    return {
-      modulosPermitidos: [
-        'dashboard',
-        'vehicles',
-        'suppliers',
-        'revisions',
-        'maintenance',
-        'tracking',
-        'detran',
-        'reports',
-        'alerts',
-        'config',
-      ],
-      podeLancarNotas: true,
-      podeEditarNotasProprias: true,
-      limiteHorasEdicaoPropria: 0, // ilimitado para gestor
-      podeEditarQualquerNota: true, // gestor edita qualquer nota
-      podeExcluirNotas: true,
-      podeGerenciarVeiculos: true,
-      podeGerenciarFornecedores: true,
-      podeGerenciarUsuarios: true,
-      podeExportarRelatorios: true,
-    };
-  }
-
-  if (role === 'OPERADOR') {
-    return {
-      modulosPermitidos: [
-        'dashboard',
-        'vehicles',
-        'suppliers',
-        'revisions',
-        'maintenance',
-        'detran',
-      ],
-      podeLancarNotas: true,
-      podeEditarNotasProprias: true,
-      limiteHorasEdicaoPropria: 24, // regra de 24 horas
-      podeEditarQualquerNota: false,
-      podeExcluirNotas: false,
-      podeGerenciarVeiculos: false,
-      podeGerenciarFornecedores: false,
-      podeGerenciarUsuarios: false,
-      podeExportarRelatorios: false,
-    };
-  }
-
-  if (role === 'MOTORISTA') {
-    return {
-      modulosPermitidos: ['dashboard', 'revisions', 'vehicles'],
-      podeLancarNotas: false,
-      podeEditarNotasProprias: false,
-      limiteHorasEdicaoPropria: 0,
-      podeEditarQualquerNota: false,
-      podeExcluirNotas: false,
-      podeGerenciarVeiculos: false,
-      podeGerenciarFornecedores: false,
-      podeGerenciarUsuarios: false,
-      podeExportarRelatorios: false,
-    };
-  }
-
-  // VISUALIZADOR / AUDITOR
-  return {
-    modulosPermitidos: ['dashboard', 'vehicles', 'suppliers', 'revisions', 'reports', 'detran'],
-    podeLancarNotas: false,
-    podeEditarNotasProprias: false,
-    limiteHorasEdicaoPropria: 0,
-    podeEditarQualquerNota: false,
-    podeExcluirNotas: false,
-    podeGerenciarVeiculos: false,
-    podeGerenciarFornecedores: false,
-    podeGerenciarUsuarios: false,
-    podeExportarRelatorios: true,
-  };
-}
+import { getDefaultPermissionsByRole, DEFAULT_SYSTEM_USERS } from './permissions';
+import { sync } from './sync';
+export { getDefaultPermissionsByRole, DEFAULT_SYSTEM_USERS };
 
 export function canUserAccessModule(user: SystemUser, moduleTab: string): boolean {
   if (!user || user.status === 'INATIVO') return false;
@@ -209,66 +126,6 @@ export function canUserEditService(user: SystemUser, service: ServiceLog): { all
 
   return { allowed: true };
 }
-
-// Default system users with credentials and granular permissions
-export const DEFAULT_SYSTEM_USERS: SystemUser[] = [
-  {
-    id: 'usr-admin-1',
-    nome: 'Carlos Henrique',
-    login: 'carlos.gestao',
-    senha: '123',
-    email: 'gestao@fleet-telecom.com.br',
-    cpf: '123.456.789-00',
-    cargo: 'GESTOR', // Administrador
-    status: 'ATIVO',
-    telefone: '(91) 98123-4567',
-    dataCriacao: '2026-01-10T08:00:00.000Z',
-    permissoes: getDefaultPermissionsByRole('GESTOR'),
-  },
-  {
-    id: 'usr-op-1',
-    nome: 'Marcos Pereira',
-    login: 'marcos.notas',
-    senha: '123',
-    email: 'marcos.operador@fleet-telecom.com.br',
-    cpf: '234.567.890-11',
-    cargo: 'OPERADOR', // Usuário responsável pelo lançamento de notas
-    status: 'ATIVO',
-    telefone: '(91) 98234-5678',
-    dataCriacao: '2026-01-15T09:30:00.000Z',
-    permissoes: getDefaultPermissionsByRole('OPERADOR'),
-  },
-  {
-    id: 'usr-op-2',
-    nome: 'Ana Beatriz',
-    login: 'ana.lancamento',
-    senha: '123',
-    email: 'ana.operadora@fleet-telecom.com.br',
-    cpf: '345.678.901-22',
-    cargo: 'OPERADOR',
-    status: 'ATIVO',
-    telefone: '(91) 98345-6789',
-    dataCriacao: '2026-02-01T10:00:00.000Z',
-    permissoes: getDefaultPermissionsByRole('OPERADOR'),
-  },
-  {
-    id: 'usr-mot-1',
-    nome: 'Roberto Lima',
-    login: 'roberto.motorista',
-    senha: '123',
-    email: 'roberto.motorista@fleet-telecom.com.br',
-    cpf: '456.789.012-33',
-    cargo: 'MOTORISTA',
-    status: 'ATIVO',
-    telefone: '(91) 98456-7890',
-    cnh: '05432198760',
-    cnhCategoria: 'AD',
-    cnhValidade: '2027-05-20',
-    dataCriacao: '2026-02-10T11:00:00.000Z',
-    permissoes: getDefaultPermissionsByRole('MOTORISTA'),
-  },
-];
-
 
 export const INITIAL_USERS: SystemUser[] = DEFAULT_SYSTEM_USERS;
 export const INITIAL_VEHICLES: Vehicle[] = [];
@@ -1107,11 +964,18 @@ export const DEMO_PRESET_REVISIONS: RevisionPlan[] = [
   },
 ];
 
+/**
+ * Dados do app. Ficam no servidor (SQLite) e são sincronizados por `sync`;
+ * aqui as leituras e gravações continuam síncronas, sobre a cópia em memória.
+ */
 class StorageService {
+  /** Usuário logado (vem do servidor; não fica salvo no navegador). */
+  private sessionUser: SystemUser | null = null;
+
   private get<T>(key: string, defaultValue: T): T {
+    const item = sync.read(key);
+    if (item === null) return defaultValue;
     try {
-      const item = localStorage.getItem(key);
-      if (item === null) return defaultValue;
       return JSON.parse(item) as T;
     } catch {
       return defaultValue;
@@ -1119,17 +983,18 @@ class StorageService {
   }
 
   private set<T>(key: string, value: T): void {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      console.warn('Erro ao salvar no localStorage:', e);
-    }
+    sync.write(key, JSON.stringify(value));
+  }
+
+  /** A coleção já existe no servidor? (Só se cria dado de exemplo quando não existe.) */
+  private exists(key: string): boolean {
+    return sync.has(key);
   }
 
   // Vehicles
   getVehicles(): Vehicle[] {
     const list = this.get<Vehicle[]>(STORAGE_KEYS.VEHICLES, []);
-    if (list.length === 0) {
+    if (!this.exists(STORAGE_KEYS.VEHICLES)) {
       this.set(STORAGE_KEYS.VEHICLES, DEMO_PRESET_VEHICLES);
       return DEMO_PRESET_VEHICLES;
     }
@@ -1180,7 +1045,7 @@ class StorageService {
   // Services
   getServices(): ServiceLog[] {
     const list = this.get<ServiceLog[]>(STORAGE_KEYS.SERVICES, []);
-    if (list.length === 0) {
+    if (!this.exists(STORAGE_KEYS.SERVICES)) {
       this.set(STORAGE_KEYS.SERVICES, DEMO_PRESET_SERVICES);
       return DEMO_PRESET_SERVICES;
     }
@@ -1270,7 +1135,7 @@ class StorageService {
   // Suppliers (Cadastros > Fornecedores)
   getSuppliers(): Supplier[] {
     const list = this.get<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
-    if (list.length === 0) {
+    if (!this.exists(STORAGE_KEYS.SUPPLIERS)) {
       this.set(STORAGE_KEYS.SUPPLIERS, DEMO_PRESET_SUPPLIERS);
       return DEMO_PRESET_SUPPLIERS;
     }
@@ -1695,20 +1560,17 @@ class StorageService {
     this.saveAlerts(alerts);
   }
 
-  markAlertSentChatwoot(id: string): void {
+  markAlertSentWhatsApp(id: string): void {
     const alerts = this.getAlerts().map(a =>
-      a.id === id ? { ...a, enviadoChatwoot: true, dataEnvioChatwoot: new Date().toISOString() } : a
+      a.id === id ? { ...a, enviadoWhatsApp: true, dataEnvioWhatsApp: new Date().toISOString() } : a
     );
     this.saveAlerts(alerts);
   }
 
   // Users & Permissions Management
   getUsers(): SystemUser[] {
+    // A lista de usuários é criada pelo servidor; aqui nunca se inventa usuário nem senha
     const list = this.get<SystemUser[]>(STORAGE_KEYS.USERS, []);
-    if (list.length === 0) {
-      this.set(STORAGE_KEYS.USERS, DEFAULT_SYSTEM_USERS);
-      return DEFAULT_SYSTEM_USERS;
-    }
 
     // Normaliza usuários antigos que não tinham login, senha ou permissoes granulares
     let needsUpdate = false;
@@ -1719,12 +1581,19 @@ class StorageService {
         copy.login = copy.email ? copy.email.split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '') : `user_${copy.id.slice(-4)}`;
         changed = true;
       }
-      if (!copy.senha) {
-        copy.senha = '123';
-        changed = true;
-      }
       if (!copy.permissoes) {
         copy.permissoes = getDefaultPermissionsByRole(copy.cargo);
+        changed = true;
+      }
+      // Motorista com o padrão antigo (sem lançar notas) passa ao padrão novo, que lança as próprias notas
+      const p = copy.permissoes;
+      if (
+        copy.cargo === 'MOTORISTA' &&
+        p &&
+        !p.podeLancarNotas &&
+        [...p.modulosPermitidos].sort().join() === 'dashboard,revisions,vehicles'
+      ) {
+        copy.permissoes = getDefaultPermissionsByRole('MOTORISTA');
         changed = true;
       }
       if (changed) needsUpdate = true;
@@ -1748,7 +1617,7 @@ class StorageService {
     const normalizedUser: SystemUser = {
       ...user,
       login: user.login.trim().toLowerCase(),
-      senha: user.senha || '123',
+      senha: user.senha,
       permissoes: user.permissoes || getDefaultPermissionsByRole(user.cargo),
     };
     users.unshift(normalizedUser);
@@ -1769,32 +1638,110 @@ class StorageService {
     this.saveUsers(users);
   }
 
-  authenticate(login: string, senha: string): SystemUser | null {
-    const cleanLogin = login.trim().toLowerCase();
-    const cleanSenha = senha.trim();
-    const users = this.getUsers();
-    const found = users.find(u =>
-      (u.login.toLowerCase() === cleanLogin || u.email.toLowerCase() === cleanLogin) &&
-      u.status === 'ATIVO'
-    );
-    if (!found) return null;
-    if (found.senha && found.senha !== cleanSenha) {
-      return null;
-    }
-    return found;
+  /** Usuário logado, ou null se ninguém entrou. */
+  getSessionUser(): SystemUser | null {
+    if (!this.sessionUser) return null;
+    // Sempre a versão mais recente da lista (perfil pode ter mudado)
+    const fresh = this.getUsers().find(u => u.id === this.sessionUser!.id);
+    if (fresh && fresh.status !== 'ATIVO') return null;
+    return fresh || this.sessionUser;
   }
 
+  /**
+   * Usuário logado, para registrar autoria. As telas só aparecem com alguém logado;
+   * sem sessão devolve um usuário sem nenhuma permissão, nunca outra pessoa.
+   */
   getActiveUser(): SystemUser {
-    const users = this.getUsers();
-    const adminUser = users.find(u => u.cargo === 'GESTOR') || users[0] || DEFAULT_SYSTEM_USERS[0];
-    const stored = this.get<SystemUser | null>(STORAGE_KEYS.ACTIVE_USER, null);
-    if (!stored) return adminUser;
-    const match = users.find(u => u.id === stored.id);
-    return match || adminUser;
+    return (
+      this.getSessionUser() || {
+        id: 'sem-sessao',
+        nome: 'Sem sessão',
+        login: '',
+        email: '',
+        cpf: '',
+        cargo: 'VISUALIZADOR',
+        status: 'INATIVO',
+        telefone: '',
+        dataCriacao: new Date(0).toISOString(),
+        permissoes: getDefaultPermissionsByRole('VISUALIZADOR'),
+      }
+    );
   }
 
   setActiveUser(user: SystemUser): void {
-    this.set(STORAGE_KEYS.ACTIVE_USER, user);
+    this.sessionUser = user;
+  }
+
+  logout(): void {
+    this.sessionUser = null;
+  }
+
+  // Motoristas (cadastro separado dos usuários do sistema)
+  getDrivers(): Driver[] {
+    const stored = this.get<Driver[] | null>(STORAGE_KEYS.DRIVERS, null);
+    if (stored) return stored;
+    return this.migrateDriversFromUsers();
+  }
+
+  saveDrivers(drivers: Driver[]): void {
+    this.set(STORAGE_KEYS.DRIVERS, drivers);
+  }
+
+  upsertDriver(driver: Driver): void {
+    const list = this.getDrivers();
+    const idx = list.findIndex(d => d.id === driver.id);
+    if (idx >= 0) list[idx] = driver;
+    else list.unshift(driver);
+    this.saveDrivers(list);
+    // Mantém o nome do motorista atualizado nos veículos dele
+    const vehicles = this.getVehicles();
+    if (vehicles.some(v => v.motoristaId === driver.id && v.motoristaNome !== driver.nome)) {
+      this.saveVehicles(vehicles.map(v => (v.motoristaId === driver.id ? { ...v, motoristaNome: driver.nome } : v)));
+    }
+  }
+
+  deleteDriver(id: string): void {
+    this.saveDrivers(this.getDrivers().filter(d => d.id !== id));
+    const vehicles = this.getVehicles();
+    if (vehicles.some(v => v.motoristaId === id)) {
+      this.saveVehicles(vehicles.map(v => (v.motoristaId === id ? { ...v, motoristaId: undefined, motoristaNome: undefined } : v)));
+    }
+  }
+
+  /**
+   * Primeira vez com o cadastro de motoristas: cria um motorista para cada usuário
+   * com perfil MOTORISTA e para quem já estava vinculado a um veículo, mantendo o vínculo
+   * com o usuário. Os veículos passam a apontar para o motorista.
+   */
+  private migrateDriversFromUsers(): Driver[] {
+    const users = this.getUsers();
+    const vehicles = this.getVehicles();
+    const linkedIds = new Set(vehicles.map(v => v.motoristaId).filter(Boolean) as string[]);
+    const drivers: Driver[] = users
+      .filter(u => u.cargo === 'MOTORISTA' || linkedIds.has(u.id))
+      .map(u => ({
+        id: `drv-${u.id}`,
+        nome: u.nome,
+        telefone: u.telefone || '',
+        cpf: u.cpf || undefined,
+        cnh: u.cnh,
+        cnhCategoria: u.cnhCategoria,
+        cnhValidade: u.cnhValidade,
+        status: u.status,
+        usuarioId: u.id,
+        dataCriacao: u.dataCriacao || new Date().toISOString(),
+      }));
+    const byUser = new Map(drivers.map(d => [d.usuarioId, d]));
+    if (vehicles.some(v => v.motoristaId && byUser.has(v.motoristaId))) {
+      this.saveVehicles(
+        vehicles.map(v => {
+          const d = v.motoristaId ? byUser.get(v.motoristaId) : undefined;
+          return d ? { ...v, motoristaId: d.id, motoristaNome: d.nome } : v;
+        }),
+      );
+    }
+    this.saveDrivers(drivers);
+    return drivers;
   }
 
   // Settings
@@ -1810,12 +1757,26 @@ class StorageService {
     if (!s.openai) {
       s.openai = INITIAL_SETTINGS.openai;
     }
+    // Chatwoot foi substituído pela WAHA: aproveita as preferências de notificação já salvas
+    const legacy = (s as any).chatwoot;
+    if (!s.waha) {
+      s.waha = {
+        ...INITIAL_SETTINGS.waha,
+        ...(legacy
+          ? {
+              notifyOnMaintenance: legacy.notifyOnMaintenance ?? true,
+              notifyOnDetran: legacy.notifyOnDetran ?? true,
+              notifyOnTelemetryAlert: legacy.notifyOnTelemetryAlert ?? true,
+            }
+          : {}),
+      };
+    }
+    if (legacy) delete (s as any).chatwoot;
     if (!s.detran) {
       s.detran = INITIAL_SETTINGS.detran;
     }
-    if (!s.supabase) {
-      s.supabase = INITIAL_SETTINGS.supabase;
-    }
+    // Supabase foi retirado: some com o bloco antigo das configurações
+    if ((s as any).supabase) delete (s as any).supabase;
     if (!s.detran.calendarioOficial || s.detran.calendarioOficial.length < 25) {
       s.detran.calendarioOficial = getDefaultDetranCalendar(s.detran.exercicio || 2026);
       this.set(STORAGE_KEYS.SETTINGS, s);
@@ -1828,20 +1789,20 @@ class StorageService {
     this.recalculateLicensing();
   }
 
-  // Chatwoot Logs
-  getChatwootLogs(): ChatwootLog[] {
-    return this.get<ChatwootLog[]>(STORAGE_KEYS.CHATWOOT_LOGS, []);
+  // Histórico de lembretes enviados pelo WhatsApp (WAHA)
+  getAlertDispatchLogs(): AlertDispatchLog[] {
+    return this.get<AlertDispatchLog[]>(STORAGE_KEYS.DISPATCH_LOGS, []);
   }
 
-  addChatwootLog(log: ChatwootLog): void {
-    const logs = this.getChatwootLogs();
+  addAlertDispatchLog(log: AlertDispatchLog): void {
+    const logs = this.getAlertDispatchLogs();
     logs.unshift(log);
     if (logs.length > 100) logs.pop();
-    this.set(STORAGE_KEYS.CHATWOOT_LOGS, logs);
+    this.set(STORAGE_KEYS.DISPATCH_LOGS, logs);
   }
 
-  // Multi-Integration Unified Logs (Selsyn, Chatwoot, OpenAI)
-  getIntegrationLogs(integration?: 'selsyn' | 'chatwoot' | 'openai'): IntegrationLog[] {
+  // Multi-Integration Unified Logs (Selsyn, WAHA, OpenAI)
+  getIntegrationLogs(integration?: 'selsyn' | 'waha' | 'openai'): IntegrationLog[] {
     const all = this.get<IntegrationLog[]>(STORAGE_KEYS.INTEGRATION_LOGS, []);
     if (!integration) return all;
     return all.filter(l => l.integration === integration);
@@ -1869,7 +1830,7 @@ class StorageService {
     return fullLog;
   }
 
-  clearIntegrationLogs(integration?: 'selsyn' | 'chatwoot' | 'openai'): void {
+  clearIntegrationLogs(integration?: 'selsyn' | 'waha' | 'openai'): void {
     if (!integration) {
       this.set(STORAGE_KEYS.INTEGRATION_LOGS, []);
       return;
@@ -1879,24 +1840,36 @@ class StorageService {
     this.set(STORAGE_KEYS.INTEGRATION_LOGS, filtered);
   }
 
-  // Clean wipe of simulated database as requested by user
+  /**
+   * Importação da versão anterior: junta pelo id (licenciamento, que não tem id, pela
+   * placa + exercício). O item importado vence quando os dois existem.
+   */
+  importList(key: string, items: Record<string, any>[]): void {
+    const identity = (i: Record<string, any>) =>
+      i?.id ?? (i?.placa && i?.exercicio ? `${i.placa}_${i.exercicio}` : undefined);
+    const current = this.get<Record<string, any>[]>(key, []);
+    const ids = new Set(items.map(identity).filter(Boolean));
+    const kept = current.filter(i => !identity(i) || !ids.has(identity(i)));
+    this.set(key, [...items, ...kept]);
+    if (key === STORAGE_KEYS.LICENSING || key === STORAGE_KEYS.VEHICLES) this.recalculateLicensing();
+  }
+
+  /** Importa configurações antigas só se o servidor ainda não tiver nenhuma. */
+  importSettingsIfMissing(settings: unknown): void {
+    if (!this.exists(STORAGE_KEYS.SETTINGS)) this.set(STORAGE_KEYS.SETTINGS, settings);
+  }
+
+  // Apaga os dados da frota (usuários e configurações são mantidos)
   clearAllFleetData(): void {
-    localStorage.removeItem(STORAGE_KEYS.VEHICLES);
-    localStorage.removeItem(STORAGE_KEYS.SERVICES);
-    localStorage.removeItem(STORAGE_KEYS.SUPPLIERS);
-    localStorage.removeItem(STORAGE_KEYS.REVISIONS);
-    localStorage.removeItem(STORAGE_KEYS.LICENSING);
-    localStorage.removeItem(STORAGE_KEYS.ALERTS);
-    localStorage.removeItem(STORAGE_KEYS.USERS);
-    localStorage.removeItem(STORAGE_KEYS.CHATWOOT_LOGS);
-    localStorage.removeItem(STORAGE_KEYS.INTEGRATION_LOGS);
     this.set(STORAGE_KEYS.VEHICLES, []);
     this.set(STORAGE_KEYS.SERVICES, []);
     this.set(STORAGE_KEYS.SUPPLIERS, []);
     this.set(STORAGE_KEYS.REVISIONS, []);
     this.set(STORAGE_KEYS.LICENSING, []);
     this.set(STORAGE_KEYS.ALERTS, []);
-    this.set(STORAGE_KEYS.USERS, []);
+    this.set(STORAGE_KEYS.DRIVERS, []);
+    this.set(STORAGE_KEYS.DISPATCH_LOGS, []);
+    this.set(STORAGE_KEYS.INTEGRATION_LOGS, []);
   }
 
   // Load demo preset on demand if the user wants example records
@@ -1905,8 +1878,6 @@ class StorageService {
     this.saveServices(DEMO_PRESET_SERVICES);
     this.saveSuppliers(DEMO_PRESET_SUPPLIERS);
     this.saveRevisions(DEMO_PRESET_REVISIONS);
-    this.saveUsers(DEFAULT_SYSTEM_USERS);
-    this.setActiveUser(DEFAULT_SYSTEM_USERS[0]);
     this.recalculateLicensing();
   }
 

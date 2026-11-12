@@ -29,7 +29,7 @@ import {
   Calendar,
   DollarSign,
 } from 'lucide-react';
-import { Vehicle, SystemUser, FuelType, ServiceLog } from '../types';
+import { Vehicle, Driver, FuelType, ServiceLog } from '../types';
 import { LicensePlateBadge } from './LicensePlateBadge';
 import { storage } from '../services/storage';
 import { ManualServiceModal } from './ManualServiceModal';
@@ -37,22 +37,23 @@ import { ManualServiceModal } from './ManualServiceModal';
 interface VehiclesViewProps {
   vehicles: Vehicle[];
   services?: ServiceLog[];
-  users: SystemUser[];
+  /** Cadastro de motoristas (separado dos usuários do sistema). */
+  drivers: Driver[];
   onVehiclesUpdated: () => void;
   onNavigateToAI: (placa?: string) => void;
   onNavigateToTracking: (veiculoId?: string) => void;
-  onSendChatwootAlert: (message: string, placa: string) => Promise<boolean>;
+  onSendWhatsAppAlert: (message: string, placa: string) => Promise<boolean>;
   onServiceAdded?: (service: ServiceLog) => void;
 }
 
 export const VehiclesView: React.FC<VehiclesViewProps> = ({
   vehicles,
   services,
-  users,
+  drivers: allDrivers,
   onVehiclesUpdated,
   onNavigateToAI,
   onNavigateToTracking,
-  onSendChatwootAlert,
+  onSendWhatsAppAlert,
   onServiceAdded,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -115,7 +116,8 @@ export const VehiclesView: React.FC<VehiclesViewProps> = ({
   } | null>(null);
   const [fleetFipeSuccessMsg, setFleetFipeSuccessMsg] = useState<string | null>(null);
 
-  const drivers = users.filter(u => u.cargo === 'MOTORISTA' || u.cargo === 'OPERADOR');
+  // Só motoristas ativos podem ser escolhidos; o atual continua visível mesmo se inativo
+  const drivers = allDrivers.filter(d => d.status === 'ATIVO' || d.id === motoristaId);
 
   const filteredVehicles = vehicles.filter(v => {
     if (filterStatus !== 'ALL' && v.status !== filterStatus) return false;
@@ -422,7 +424,7 @@ export const VehiclesView: React.FC<VehiclesViewProps> = ({
     if (!selsynEditableData) return;
     const finalData = selsynEditableData;
     const cleanPlaca = (finalData.placa || placa).trim().toUpperCase();
-    const selectedDriver = users.find(u => u.id === motoristaId);
+    const selectedDriver = allDrivers.find(d => d.id === motoristaId);
     const rawEst = Number(finalData.odometroEstimado ?? finalData.odometroAtual) || 35000;
     const estKm = rawEst > 500000 ? Math.round(rawEst / 1000) : rawEst;
     const rawRast = Number(finalData.odometroRastreador ?? finalData.odometroAtual) || 0;
@@ -479,7 +481,7 @@ export const VehiclesView: React.FC<VehiclesViewProps> = ({
     const cleanPlaca = placa.trim().toUpperCase();
     if (!cleanPlaca || !modelo.trim()) return;
 
-    const selectedDriver = users.find(u => u.id === motoristaId);
+    const selectedDriver = allDrivers.find(d => d.id === motoristaId);
     const finalEstKm = Number(odometroEstimado ?? odometroAtual ?? 0);
     const finalRastKm = Number(odometroRastreador ?? 0);
 
@@ -1592,7 +1594,7 @@ export const VehiclesView: React.FC<VehiclesViewProps> = ({
                     <option value="">Nenhum motorista associado</option>
                     {drivers.map(d => (
                       <option key={d.id} value={d.id}>
-                        {d.nome} {d.cnh ? `(CNH: ${d.cnh})` : ''}
+                        {d.nome}{d.cnhCategoria ? ` · CNH ${d.cnhCategoria}` : ''}{d.status === 'INATIVO' ? ' (inativo)' : ''}
                       </option>
                     ))}
                   </select>
@@ -2161,7 +2163,7 @@ export const VehiclesView: React.FC<VehiclesViewProps> = ({
           onVehiclesUpdated();
           if (onServiceAdded) onServiceAdded(newSrv);
         }}
-        onSendChatwootAlert={onSendChatwootAlert}
+        onSendWhatsAppAlert={onSendWhatsAppAlert}
       />
     </div>
   );

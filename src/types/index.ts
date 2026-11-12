@@ -228,13 +228,47 @@ export interface TelemetryAlert {
   nivel: 'INFO' | 'AVISO' | 'CRITICO';
   titulo: string;
   mensagem: string;
-  enviadoChatwoot: boolean;
-  dataEnvioChatwoot?: string;
-  chatwootStatus?: 'PENDENTE' | 'PRONTO_PARA_ENVIO' | 'ENVIADO' | 'TESTE_SIMULADO';
+  enviadoWhatsApp: boolean;
+  dataEnvioWhatsApp?: string;
+  whatsappStatus?: 'PENDENTE' | 'PRONTO_PARA_ENVIO' | 'ENVIADO' | 'TESTE_SIMULADO';
   resolvido: boolean;
 }
 
 export type UserRole = 'GESTOR' | 'OPERADOR' | 'MOTORISTA' | 'VISUALIZADOR';
+
+/** Rótulos do perfil de acesso. O perfil diz o que a pessoa pode fazer no sistema, não quem ela é. */
+export const USER_ROLE_LABEL: Record<UserRole, string> = {
+  GESTOR: 'Gestor / gerente',
+  OPERADOR: 'Supervisor / operador',
+  MOTORISTA: 'Motorista (lança as próprias notas)',
+  VISUALIZADOR: 'Somente leitura',
+};
+
+export const USER_ROLE_SHORT: Record<UserRole, string> = {
+  GESTOR: 'Gestor',
+  OPERADOR: 'Supervisor',
+  MOTORISTA: 'Motorista',
+  VISUALIZADOR: 'Leitura',
+};
+
+/**
+ * Motorista da frota. É um cadastro próprio, separado de quem usa o sistema:
+ * nem todo motorista entra no sistema, e nem todo usuário dirige.
+ * Quando o motorista também tem acesso, `usuarioId` aponta para o usuário dele.
+ */
+export interface Driver {
+  id: string;
+  nome: string;
+  telefone: string;
+  cpf?: string;
+  cnh?: string;
+  cnhCategoria?: string;
+  cnhValidade?: string; // YYYY-MM-DD
+  status: 'ATIVO' | 'INATIVO';
+  usuarioId?: string;
+  observacoes?: string;
+  dataCriacao: string;
+}
 
 export interface UserPermissions {
   // Onde o usuário pode navegar (módulos autorizados)
@@ -261,8 +295,11 @@ export interface SystemUser {
   cargo: UserRole;
   status: 'ATIVO' | 'INATIVO';
   telefone: string;
+  /** @deprecated CNH agora fica no cadastro de motorista (Driver). Mantido só para migrar dados antigos. */
   cnh?: string;
+  /** @deprecated ver Driver */
   cnhValidade?: string;
+  /** @deprecated ver Driver */
   cnhCategoria?: string;
   dataCriacao: string;
   permissoes?: UserPermissions;
@@ -296,12 +333,13 @@ export interface SystemSettings {
     autoSyncInterval: number; // seconds
     modoSimulacao: boolean;
   };
-  chatwoot: {
+  /** WAHA (WhatsApp HTTP API): envio dos lembretes e alertas pelo WhatsApp. */
+  waha: {
     baseUrl: string;
-    apiAccessToken: string;
-    accountId: string;
-    inboxId: string;
-    conversationId: string;
+    apiKey: string;
+    session: string;
+    /** Números (DDD + número) ou IDs de grupo (…@g.us), separados por vírgula ou linha. */
+    destinos: string;
     autoAlertsEnabled: boolean;
     notifyOnMaintenance: boolean;
     notifyOnDetran: boolean;
@@ -319,16 +357,9 @@ export interface SystemSettings {
     model: 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4-turbo';
     preferredProvider: 'openai' | 'gemini';
   };
-  supabase?: {
-    url: string;
-    publishableKey: string;
-    storageBucket: string;
-    environment: 'development' | 'production';
-    autoSyncEnabled: boolean;
-  };
 }
 
-export interface ChatwootLog {
+export interface AlertDispatchLog {
   id: string;
   timestamp: string;
   alertaId?: string;
@@ -341,7 +372,7 @@ export interface ChatwootLog {
 
 export interface IntegrationLog {
   id: string;
-  integration: 'selsyn' | 'chatwoot' | 'openai' | 'supabase';
+  integration: 'selsyn' | 'waha' | 'openai';
   timestamp: string;
   endpoint: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -353,49 +384,3 @@ export interface IntegrationLog {
   details?: any;
 }
 
-export interface VehicleDocument {
-  id: string;
-  veiculoId: string;
-  manutencaoId?: string;
-  tipoDocumento: 'NOTA_FISCAL' | 'FOTO_MANUTENCAO' | 'COMPROVANTE_PAGAMENTO' | 'DOCUMENTO_VEICULO' | 'ORDEM_SERVICO';
-  nomeArquivo: string;
-  tamanhoBytes: number;
-  mimeType: string;
-  bucketName: string;
-  storagePath: string;
-  urlPublica?: string;
-  metadata?: Record<string, any>;
-  criadoPor?: string;
-  createdAt: string;
-}
-
-export interface SupabaseHealthCheck {
-  isConfigured: boolean;
-  url: string;
-  hasPublishableKey: boolean;
-  connectionOk: boolean;
-  latencyMs: number;
-  statusCode?: number;
-  message: string;
-  rlsEnforced: boolean;
-  anonymousBlocked: boolean;
-  tablesStatus: {
-    veiculos: boolean;
-    fornecedores: boolean;
-    manutencoes: boolean;
-    pecas_manutencao: boolean;
-    servicos_executados: boolean;
-    planos_revisao: boolean;
-    licenciamento_ipva: boolean;
-    usuarios_motoristas: boolean;
-    alertas_telemetria: boolean;
-    historico_chatwoot: boolean;
-    logs_integracao: boolean;
-    documentos_anexos: boolean;
-  };
-  storageStatus: {
-    bucketName: string;
-    exists: boolean;
-    isPrivate: boolean;
-  };
-}

@@ -3,8 +3,8 @@
 
 **Domínio:** `fleet.nortetelecom.net.br`  
 **Roteador de Entrada:** Traefik existente (Rede externa: `Mosqueironet`)  
-**Banco de Dados:** PostgreSQL 17 Dedicado (Rede privada: `fleet_internal`)  
-**Volume do Banco:** `fleet_postgres_data`  
+**Banco de Dados:** SQLite dentro do próprio app (arquivo `/app/data/fleet.db`)  
+**Volume de Dados:** `fleet_data`  
 **Imagem da Aplicação:** `fleet-app:1.0.0` (construída localmente no nó Manager)  
 
 ---
@@ -63,17 +63,15 @@ docker images | grep fleet-app
 
 ---
 
-## 3. Criação dos Segredos no Docker Swarm (Docker Secrets)
+## 3. Segredo da IA (Docker Secret)
 
 No terminal do nó Manager (ou pela interface do Portainer em **Secrets**):
 
 ```bash
-# 1. Cria a senha do banco PostgreSQL dedicada ao usuário fleet_user
-openssl rand -base64 24 | tr -d '\n' | docker secret create db_password -
-
-# 2. Cria a chave de API do Gemini para os serviços de IA e leitura de notas
 echo -n "SUA_CHAVE_GEMINI_AQUI" | docker secret create gemini_api_key -
 ```
+
+Não há senha de banco: o banco é um arquivo SQLite dentro do volume `fleet_data`.
 
 ---
 
@@ -86,21 +84,34 @@ echo -n "SUA_CHAVE_GEMINI_AQUI" | docker secret create gemini_api_key -
 5. Cole o conteúdo integral do arquivo `docker-stack.yml`.
 6. Clique no botão **Deploy the stack**.
 
-O Portainer criará os serviços `fleet_telecom_fleet_app` e `fleet_telecom_fleet_db`.
+O Portainer criará o serviço `fleet_telecom_fleet_app` e o volume `fleet_telecom_fleet_data`.
 
 ---
 
-## 5. Execução das Migrations Iniciais do PostgreSQL
+## 5. Primeiro acesso
 
-Com a stack iniciada e o serviço `fleet_db` saudável:
+No primeiro start (volume vazio) o app cria o banco e um administrador:
+
+- login: o valor de `FLEET_ADMIN_LOGIN` (padrão `admin`);
+- senha: a de `FLEET_ADMIN_PASSWORD`, ou, se ela não foi definida, uma senha temporária
+  que aparece **uma única vez** no log do serviço (`Services` > `fleet_app` > `Logs`, linha `[DB] Banco novo`).
+
+Entre, crie os usuários da equipe em **Usuários** e troque a senha do administrador.
+Se algum navegador ainda tiver dados da versão anterior (que guardava tudo no navegador),
+ao entrar como gestor o app oferece **Importar** esses dados para o servidor.
+
+### Backup
+
+O banco inteiro é o arquivo `fleet.db`. Para uma cópia consistente com o app rodando:
 
 ```bash
-# Identifica o ID do container do banco
-DB_CONTAINER=$(docker ps -q -f name=fleet_telecom_fleet_db)
-
-# Executa as migrations versionadas contidas na pasta do projeto
-docker exec -i ${DB_CONTAINER} bash < /opt/apps/fleet/database/scripts/migrate.sh
+C=$(docker ps -q -f name=fleet_telecom_fleet_app)
+docker exec $C node -e "new (require('node:sqlite').DatabaseSync)('/app/data/fleet.db').exec(\"VACUUM INTO '/app/data/backup.db'\")"
+docker cp $C:/app/data/backup.db ./fleet-$(date +%F).db
+docker exec $C rm /app/data/backup.db
 ```
+
+Restaurar: pare o serviço, coloque o arquivo no volume com o nome `fleet.db` e suba de novo.
 
 ---
 
@@ -119,7 +130,6 @@ docker exec -i ${DB_CONTAINER} bash < /opt/apps/fleet/database/scripts/migrate.s
 
 3. **Logs dos Containers no Portainer:**
    - Acesse **Services** > `fleet_telecom_fleet_app` > **Logs** para verificar a inicialização do Express.
-   - Acesse **Services** > `fleet_telecom_fleet_db` > **Logs** para verificar o PostgreSQL 17 rodando no volume persistente `fleet_postgres_data`.
 
 ---
 
