@@ -1,0 +1,237 @@
+@import "tailwindcss";
+
+/*
+ * Identidade OmniNort (Norte Telecom) aplicada ao Fleet Telecom.
+ * As paletas padrão do Tailwind são remapeadas para rampas derivadas dos tokens
+ * OmniNort, então todas as telas existentes herdam as cores sem reescrever classes:
+ *   slate   -> neutros com tom navy (ink, ink-muted, line, surface)
+ *   sky/blue/indigo -> brand-navy + info
+ *   emerald/green   -> brand-green (+ green-text para texto)
+ *   cyan/teal       -> teal
+ *   amber/yellow    -> warning
+ *   red/rose        -> danger
+ */
+@theme {
+  --font-sans: "Harmonia Sans", Figtree, Calibri, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Tokens de marca */
+  --color-brand-navy: #00375a;
+  --color-brand-green: #87b137;
+  --color-navy-deep: #002946;
+  --color-navy-blue: #00386e;
+  --color-surface-000: #ffffff;
+  --color-surface-100: #f4f5f6;
+  --color-surface-200: #e6e7e8;
+  --color-ink: #002946;
+  --color-ink-muted: #56677a;
+  --color-line: #e6e7e8;
+  --color-line-strong: #7d8b99;
+  --color-green-text: #4d7a12;
+  --color-info: #0f6f99;
+  --color-focus: #1a94c5;
+
+  /* Neutros */
+  --color-slate-50: #f4f5f6;
+  --color-slate-100: #eceef0;
+  --color-slate-200: #e6e7e8;
+  --color-slate-300: #c3cad1;
+  --color-slate-400: #7d8b99;
+  --color-slate-500: #56677a;
+  --color-slate-600: #465767;
+  --color-slate-700: #2a4053;
+  --color-slate-800: #0e3049;
+  --color-slate-900: #002946;
+  --color-slate-950: #001b2e;
+  --color-gray-50: #f4f5f6;
+  --color-gray-100: #eceef0;
+  --color-gray-200: #e6e7e8;
+  --color-gray-300: #c3cad1;
+  --color-gray-400: #7d8b99;
+  --color-gray-500: #56677a;
+  --color-gray-600: #465767;
+  --color-gray-700: #2a4053;
+  --color-gray-800: #0e3049;
+  --color-gray-900: #002946;
+
+  /* Navy / info */
+  --color-sky-50: #eef5f9;
+  --color-sky-100: #dcebf3;
+  --color-sky-200: #b5d6e7;
+  --color-sky-300: #7fbbd9;
+  --color-sky-400: #1a94c5;
+  --color-sky-500: #117aa6;
+  --color-sky-600: #0f6f99;
+  --color-sky-700: #00527f;
+  --color-sky-800: #00375a;
+  --color-sky-900: #002946;
+  --color-sky-950: #001b2e;
+  --color-blue-50: #eef5f9;
+  --color-blue-100: #dcebf3;
+  --color-blue-200: #b5d6e7;
+  --color-blue-300: #7fbbd9;
+  --color-blue-400: #1a94c5;
+  --color-blue-500: #0f6f99;
+  --color-blue-600: #00527f;
+  --color-blue-700: #00375a;
+  --color-blue-800: #002946;
+  --color-blue-900: #001b2e;
+  --color-indigo-50: #eef5f9;
+  --color-indigo-100: #dcebf3;
+  --color-indigo-200: #b5d6e7;
+  --color-indigo-500: #00527f;
+  --color-indigo-600: #00375a;
+  --color-indigo-700: #002946;
+
+  /* Verde da marca */
+  --color-emerald-50: #f3f7e8;
+  --color-emerald-100: #e7f0d0;
+  --color-emerald-200: #d9e697;
+  --color-emerald-300: #bcd37a;
+  --color-emerald-400: #9fc24f;
+  --color-emerald-500: #87b137;
+  --color-emerald-600: #4d7a12;
+  --color-emerald-700: #3d6310;
+  --color-emerald-800: #2f4c0d;
+  --color-emerald-900: #243a0b;
+  --color-emerald-950: #17260a;
+  --color-green-50: #f3f7e8;
+  --color-green-100: #e7f0d0;
+  --color-green-500: #87b137;
+  --color-green-600: #4d7a12;
+  --color-green-700: #3d6310;
+
+  /* Teal */
+  --color-cyan-50: #ecf8f7;
+  --color-cyan-100: #d3f0ee;
+  --color-cyan-200: #8ed2cd;
+  --color-cyan-300: #5cc4bf;
+  --color-cyan-400: #1bb4b0;
+  --color-cyan-500: #17a19d;
+  --color-cyan-600: #12807d;
+  --color-cyan-700: #0f6664;
+  --color-cyan-800: #0c4f4d;
+  --color-cyan-900: #0a3e3d;
+  --color-teal-500: #1bb4b0;
+
+  /* Aviso */
+  --color-amber-50: #fff8e8;
+  --color-amber-100: #fff3d6;
+  --color-amber-200: #fde3a6;
+  --color-amber-300: #f5c86a;
+  --color-amber-400: #f0b85a;
+  --color-amber-500: #c98a12;
+  --color-amber-600: #a86f00;
+  --color-amber-700: #8a5a00;
+  --color-amber-800: #6b4600;
+  --color-amber-900: #4f3400;
+  --color-yellow-50: #fff8e8;
+  --color-yellow-100: #fff3d6;
+  --color-yellow-500: #c98a12;
+  --color-yellow-600: #a86f00;
+  --color-yellow-700: #8a5a00;
+
+  /* Perigo */
+  --color-red-50: #fdf1ef;
+  --color-red-100: #fbe7e4;
+  --color-red-200: #f5c9c2;
+  --color-red-300: #f08a7e;
+  --color-red-400: #e0685a;
+  --color-red-500: #c9554a;
+  --color-red-600: #b8473a;
+  --color-red-700: #973a2f;
+  --color-red-800: #772e25;
+  --color-red-900: #5a231c;
+  --color-rose-50: #fdf1ef;
+  --color-rose-100: #fbe7e4;
+  --color-rose-500: #c9554a;
+  --color-rose-600: #b8473a;
+  --color-rose-700: #973a2f;
+
+  /* Forma (cantos arredondados, nunca pontudos) */
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 41, 70, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 41, 70, 0.1);
+  --shadow-lg: 0 8px 24px rgba(0, 41, 70, 0.16);
+  --shadow-xl: 0 12px 32px rgba(0, 41, 70, 0.18);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background-color: var(--color-surface-100);
+    font-feature-settings: "tnum" 0;
+  }
+
+  /* Foco: anel de 2px com 2px de folga em todo controle */
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  ::selection {
+    background: #d9e697;
+    color: #002946;
+  }
+}
+
+@layer utilities {
+  /* Vidro fosco no estilo Apple para barras e painéis flutuantes */
+  .glass {
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: saturate(1.6) blur(20px);
+    -webkit-backdrop-filter: saturate(1.6) blur(20px);
+  }
+}
+
+/* Barra de rolagem discreta */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c3cad1;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #7d8b99;
+  background-clip: padding-box;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
