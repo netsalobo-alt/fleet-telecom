@@ -3,8 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
-import * as pdfParseModule from 'pdf-parse';
-const pdfParse = (pdfParseModule as any).default || pdfParseModule;
+import { PDFParse } from 'pdf-parse';
 
 dotenv.config();
 
@@ -188,12 +187,16 @@ const JSON_STRUCTURE_SAMPLE = `{
   "alertaUrgencia": false
 }`;
 
-// Helper: Extract text from PDF Base64
+// Helper: texto de um PDF em base64 (pdf-parse v2). PDF escaneado (só imagem) devolve texto vazio.
 async function extractTextFromPdf(base64Data: string): Promise<string> {
   const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
-  const buffer = Buffer.from(cleanBase64, 'base64');
-  const data = await pdfParse(buffer);
-  return data.text || '';
+  const parser = new PDFParse({ data: Buffer.from(cleanBase64, 'base64') });
+  try {
+    const result = await parser.getText();
+    return (result.text || '').replace(/\n*-- \d+ of \d+ --\n*/g, '\n').trim();
+  } finally {
+    await parser.destroy().catch(() => {});
+  }
 }
 
 // Endpoint: Test OpenAI API Token
@@ -411,6 +414,7 @@ app.post('/api/ai/parse-service', async (req, res) => {
     promptText += `\n${contextStr}\n${suppliersStr}\n\nRetorne ESTRITAMENTE um JSON com esta estrutura:\n${JSON_STRUCTURE_SAMPLE}`;
 
     let parsedResult: any = null;
+    let openAiFailure = '';
     let providerUsed = provider;
     let modelUsed = openaiModel;
 
@@ -429,10 +433,27 @@ app.post('/api/ai/parse-service', async (req, res) => {
           const isImage = file.type?.startsWith('image/') || /\.(png|jpe?g|webp|bmp)$/i.test(file.name || '');
 
           if (isPdf) {
-            const pdfText = await extractTextFromPdf(file.base64);
+            // Manda o próprio PDF (a OpenAI lê texto e imagem das páginas, inclusive PDF escaneado)
+            // e, quando houver, também o texto extraído, que ajuda nos números e na placa.
+            const cleanBase64 = file.base64.replace(/^data:[^;]+;base64,/, '');
+            let pdfText = '';
+            try {
+              pdfText = await extractTextFromPdf(cleanBase64);
+            } catch (err: any) {
+              console.warn('Não foi possível extrair o texto do PDF:', err?.message || err);
+            }
+            const textoPdf = pdfText
+              ? `\n\n[TEXTO EXTRAÍDO DO PDF ${file.name}]:\n${pdfText.slice(0, 60000)}`
+              : '\n\n(O PDF não tem texto selecionável: leia as imagens das páginas.)';
             messages.push({
               role: 'user',
-              content: `${promptText}\n\n[CONTEÚDO EXTRAÍDO DA NOTA FISCAL/PDF ${file.name}]:\n${pdfText}`,
+              content: [
+                { type: 'text', text: promptText + textoPdf },
+                {
+                  type: 'file',
+                  file: { filename: file.name || 'documento.pdf', file_data: `data:application/pdf;base64,${cleanBase64}` },
+                },
+              ],
             });
           } else if (isImage) {
             const cleanBase64 = file.base64.replace(/^data:[^;]+;base64,/, '');
@@ -481,7 +502,8 @@ app.post('/api/ai/parse-service', async (req, res) => {
         providerUsed = 'OpenAI';
         modelUsed = openaiModel || 'gpt-4o';
       } catch (openAiError: any) {
-        console.warn('Falha no processamento OpenAI, ativando fallback automático:', openAiError?.message || openAiError);
+        openAiFailure = String(openAiError?.message || openAiError);
+        console.warn('Falha no processamento OpenAI, ativando fallback automático:', openAiFailure);
       }
     }
 
@@ -511,8 +533,16 @@ app.post('/api/ai/parse-service', async (req, res) => {
         providerUsed = effectiveOpenAiKey ? 'Gemini (Fallback)' : 'Gemini';
         modelUsed = geminiRes.modelUsed;
       } catch (geminiError: any) {
-        console.warn('Todos os modelos Gemini falharam temporariamente, aplicando extrator determinístico de emergência:', geminiError);
-        // Resilient emergency fallback so user is never blocked
+        console.warn('Todos os modelos Gemini falharam temporariamente:', geminiError?.message || geminiError);
+        if (file && file.base64) {
+          // Com documento anexado, não inventa valores: mostra o motivo real
+          const motivo = openAiFailure || String(geminiError?.message || geminiError);
+          return res.status(502).json({
+            success: false,
+            error: `Não foi possível ler o documento com a IA. ${openAiFailure ? 'OpenAI' : 'Gemini'}: ${motivo.slice(0, 400)}`,
+          });
+        }
+        // Só texto: extrator por regras, para não bloquear o lançamento
         parsedResult = parseServiceLocally(input || file?.name || '', vehiclesContext, suppliersContext);
         providerUsed = 'Processador de Frota Local';
         modelUsed = 'Regras de Padrão Automotivo';
