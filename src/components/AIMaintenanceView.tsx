@@ -57,6 +57,7 @@ interface AIMaintenanceViewProps {
   users?: SystemUser[];
   onServiceAdded: (service: ServiceLog) => void;
   onServiceUpdated?: (service: ServiceLog) => void;
+  onServiceDeleted?: (service: ServiceLog) => void;
   onSendWhatsAppAlert: (message: string, placa: string) => Promise<boolean>;
 }
 
@@ -170,6 +171,7 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
   users = [],
   onServiceAdded,
   onServiceUpdated,
+  onServiceDeleted,
   onSendWhatsAppAlert,
 }) => {
   const settings = storage.getSettings();
@@ -295,6 +297,16 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
     if (selectedHistoryItem?.id === updated.id) {
       setSelectedHistoryItem(updated);
     }
+  };
+
+  // Exclui um lançamento feito errado (some do histórico, do Raio-X e dos gastos)
+  const handleDeleteService = (srv: ServiceLog, canEdit: boolean) => {
+    if (!canEdit) return;
+    const valor = (srv.valorTotal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    if (!window.confirm(`Excluir o lançamento de ${srv.placa} (${new Date(srv.data + 'T12:00:00').toLocaleDateString('pt-BR')}, ${valor})?\n\nEle sai do histórico e do Raio-X. Não dá para desfazer.`)) return;
+    storage.deleteService(srv.id);
+    if (selectedHistoryItem?.id === srv.id) setSelectedHistoryItem(null);
+    onServiceDeleted?.(srv);
   };
 
   const [inputText, setInputText] = useState('');
@@ -1635,6 +1647,18 @@ export const AIMaintenanceView: React.FC<AIMaintenanceViewProps> = ({
                             {perm.canEdit ? <Edit2 className="w-3 h-3 text-sky-600" /> : <Lock className="w-3 h-3 text-slate-400" />}
                             <span>Editar</span>
                           </button>
+
+                          {perm.canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteService(srv, perm.canEdit)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all"
+                              title="Excluir este lançamento"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Excluir</span>
+                            </button>
+                          )}
 
                           <button
                             type="button"

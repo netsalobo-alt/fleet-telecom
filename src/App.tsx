@@ -484,6 +484,10 @@ export default function App({ onLogout }: AppProps) {
               refreshRevisions();
               showToast(`Lançamento do veículo ${updated.placa} atualizado com sucesso!`, 'success');
             }}
+            onServiceDeleted={(removed) => {
+              refreshServices();
+              showToast(`Lançamento do veículo ${removed.placa} excluído.`, 'success');
+            }}
             onSendWhatsAppAlert={handleSendWhatsAppAlert}
           />
         )}
